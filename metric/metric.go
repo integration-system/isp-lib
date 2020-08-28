@@ -2,11 +2,12 @@ package metric
 
 import (
 	"encoding/json"
-	httpSwagger "github.com/swaggo/http-swagger"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"path/filepath"
 	"sync"
 	"time"
+
+	httpSwagger "github.com/swaggo/http-swagger"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 
 	"github.com/buaazp/fasthttprouter"
 	"github.com/integration-system/isp-lib/v2/structure"
@@ -61,7 +62,7 @@ func InitHttpServer(metricConfig structure.MetricConfiguration) {
 	router.GET(startProfilingPath, handleEnableProfilingRequest)
 	router.GET(stopProfilingPath, handleDisableProfilingRequest)
 
-	router.GET("/swagger/*name", handleEnableHTTPSwagger(metricIp, metricPort))
+	router.GET("/swagger/*name", makeSwaggerHandler(metricIp, metricPort))
 
 	lock.Lock()
 	newMetricServer := &fasthttp.Server{
@@ -151,8 +152,8 @@ func handleMetricRequest(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 }
 
-func handleEnableHTTPSwagger(metricIp string, metricPort string) func(*fasthttp.RequestCtx) {
-	handlerHttpSwagger := fasthttpadaptor.NewFastHTTPHandlerFunc(httpSwagger.Handler(
+func makeSwaggerHandler(metricIp string, metricPort string) func(*fasthttp.RequestCtx) {
+	swaggerHandler := fasthttpadaptor.NewFastHTTPHandlerFunc(httpSwagger.Handler(
 		httpSwagger.URL(metricIp + ":" + metricPort + "/swagger/doc.json"),
 	))
 
@@ -167,6 +168,6 @@ func handleEnableHTTPSwagger(metricIp string, metricPort string) func(*fasthttp.
 		case ".js":
 			ctx.SetContentType("text/javascript")
 		}
-		handlerHttpSwagger(ctx)
+		swaggerHandler(ctx)
 	}
 }
