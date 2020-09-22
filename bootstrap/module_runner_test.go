@@ -84,7 +84,7 @@ type CheckingEvent struct {
 type testingBox struct {
 	checkingChan      chan CheckingEvent
 	moduleInsertFuncs ModuleInsertFuncs
-	handleInsertFuncs HandleInsertFuncs
+	handleServerFuncs HandleServerFuncs
 	t                 *testing.T
 	order             []eventType
 	tmpDir            string
@@ -125,7 +125,12 @@ type ModuleFuncs struct {
 	onRemoteErrorReceive  func(errorMessage map[string]interface{})
 }
 
-type HandleInsertFuncs struct {
+type HandleServerFuncs struct {
+	handleConnect            func(conn etp.Conn)
+	handleDisconnect         func(conn etp.Conn, _ error)
+	handleModuleReady        func(conn etp.Conn, data []byte) []byte
+	handleModuleRequirements func(conn etp.Conn, data []byte) []byte
+	handleConfigSchema       func(conn etp.Conn, data []byte) []byte
 }
 
 func (tb *testingBox) insertCheckinChanInModule() *ModuleFuncs {
@@ -142,8 +147,7 @@ func (tb *testingBox) insertCheckinChanInModule() *ModuleFuncs {
 
 func (tb *testingBox) testingServersRun(mFuncs *ModuleFuncs) {
 	ms := newMockServer(tb.checkingChan)
-
-	ms.SubscribeAll()
+	ms.SubscribeAll(tb.handleServerFuncs)
 
 	tb.tmpDir = setupConfig(tb.t, "127.0.0.1", ms.addr.Port)
 
@@ -202,6 +206,53 @@ func (tb *testingBox) reconnectAndListenModule(errorHandling func(CheckingEvent,
 	tb.testingListner(errorHandling)
 }
 
+func makeDefaultTestingBox(t *testing.T) *testingBox {
+	tb := &testingBox{
+		t:            t,
+		checkingChan: make(CheckingChan, 20),
+		moduleInsertFuncs: ModuleInsertFuncs{
+			onRemoteConfigReceive: onRemoteConfigReceive,
+			onRemoteErrorReceive:  onRemoteErrorReceive,
+		},
+		order: []eventType{
+			eventHandleConnect,
+			eventHandledConfigSchema,
+			eventRemoteConfigReceive,
+			eventHandleModuleReady,
+			eventHandleModuleRequirements,
+		},
+	}
+	tb.handleServerFuncs.handleConnect = func(conn etp.Conn) {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleConnect, conn: conn}
+	}
+	tb.handleServerFuncs.handleDisconnect = func(conn etp.Conn, _ error) {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleDisconnect}
+	}
+	tb.handleServerFuncs.handleModuleReady = func(conn etp.Conn, data []byte) []byte {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleReady}
+		return []byte(utils.WsOkResponse)
+	}
+	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements}
+		return []byte(utils.WsOkResponse)
+	}
+	tb.handleServerFuncs.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandledConfigSchema}
+
+		type confSchema struct {
+			Config json2.RawMessage
+		}
+		var configSchema confSchema
+		if err := json.Unmarshal(data, &configSchema); err != nil {
+			return []byte(err.Error())
+		}
+		conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected, configSchema.Config)
+
+		return []byte(utils.WsOkResponse)
+	}
+	return tb
+}
+
 func errorHandlingFor_ValidNewModule(event CheckingEvent, index int) string {
 	str := fmt.Sprintf("ERROR: At order %d event %s happend\n", index, event.typeEvent.String())
 	switch event.typeEvent {
@@ -222,28 +273,11 @@ func errorHandlingFor_ValidNewModule(event CheckingEvent, index int) string {
 	return str
 }
 
-func TestBootstrapConfiguration_ValidNewModule(t *testing.T) {
-	tb := testingBox{
-		t:            t,
-		checkingChan: make(CheckingChan, 20),
-		moduleInsertFuncs: ModuleInsertFuncs{
-			onRemoteConfigReceive: onRemoteConfigReceive,
-			onRemoteErrorReceive:  onRemoteErrorReceive,
-		},
-		handleInsertFuncs: HandleInsertFuncs{}, // TODO вынести хендлеры в отдельную структуру
-		order: []eventType{
-			eventHandleConnect,
-			eventHandledConfigSchema,
-			eventRemoteConfigReceive,
-			eventHandleModuleReady,
-			eventHandleModuleRequirements,
-		},
-	}
+func TestDefaultValid(t *testing.T) {
+	tb := makeDefaultTestingBox(t)
 
 	tb.testingServersRun(tb.insertCheckinChanInModule())
-
 	tb.testingListner(errorHandlingFor_ValidNewModule)
-
 	tb.reconnectAndListenModule(errorHandlingFor_ValidNewModule)
 
 	if err := os.RemoveAll(tb.tmpDir); err != nil {
@@ -253,21 +287,15 @@ func TestBootstrapConfiguration_ValidNewModule(t *testing.T) {
 	return
 }
 
-func setupConfig(t *testing.T, configAddr, configPort string) string {
-	//m := map[string]string{
-	//	"LC_ISP_CONFIGSERVICEADDRESS.IP":   configAddr,
-	//	"LC_ISP_CONFIGSERVICEADDRESS.PORT": configPort,
-	//}
-	//for k, v := range m {
-	//	os.Setenv(k, v)
-	//}
+func Test_handleModuleRequirements_NotOkResponse(t *testing.T) {
 
+}
+
+func setupConfig(t *testing.T, configAddr, configPort string) string {
 	viper.Reset()
 	viper.SetEnvPrefix(config.LocalConfigEnvPrefix)
 	viper.AutomaticEnv()
 	viper.SetConfigName("config")
-	//viper.ReadConfig()
-	//viper.SetFs()
 
 	tmpDir, err := ioutil.TempDir("", "test")
 	if err != nil {
@@ -377,9 +405,11 @@ func onRemoteConfigErrorReceive(errorMessage string) {
 // ---------------------------------------------------------------------------------
 
 type mockConfigServer struct {
-	etpServer    etp.Server
-	httpServer   *http.Server
-	addr         structure.AddressConfiguration
+	etpServer  etp.Server
+	httpServer *http.Server
+	addr       structure.AddressConfiguration
+	//f1            func(conn etp.Conn, data []byte) []byte
+	//fhandleConnect func(conn etp.Conn)
 	checkingChan CheckingChan
 }
 
@@ -411,17 +441,34 @@ func newMockServer(cc CheckingChan) *mockConfigServer {
 	return srv
 }
 
-func (s *mockConfigServer) SubscribeAll() {
+//func (s *mockConfigServer) SubscribeAll(tb *testingBox) {
+//	s.etpServer.
+//		OnConnect(func(conn etp.Conn) {
+//			tb.handleServerFuncs.handleConnect(conn)
+//		}).
+//		OnDisconnect(s.handleDisconnect).
+//		//OnError(s.handleError). //TODO придумать что с этим делать
+//		OnWithAck(utils.ModuleReady, s.handleModuleReady).
+//		OnWithAck(utils.ModuleSendRequirements, func(conn etp.Conn, data []byte) []byte {
+//			s.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements}
+//			if f := th.handleModuleRequirements; f != nil {
+//				return f(conn, data)
+//			}
+//			return []byte(utils.WsOkResponse)
+//		}).
+//		OnWithAck(utils.ModuleSendConfigSchema, s.handleConfigSchema)
+//}
+
+func (s *mockConfigServer) SubscribeAll(th HandleServerFuncs) {
 	s.etpServer.
-		OnConnect(s.handleConnect).
-		OnDisconnect(s.handleDisconnect).
+		OnConnect(th.handleConnect).
+		OnDisconnect(th.handleDisconnect).
 		//OnError(s.handleError). //придумать что с этим делать
-		OnWithAck(utils.ModuleReady, s.handleModuleReady).
-		OnWithAck(utils.ModuleSendRequirements, s.handleModuleRequirements).
-		OnWithAck(utils.ModuleSendConfigSchema, s.handleConfigSchema)
+		OnWithAck(utils.ModuleReady, th.handleModuleReady).
+		OnWithAck(utils.ModuleSendRequirements, th.handleModuleRequirements).
+		OnWithAck(utils.ModuleSendConfigSchema, th.handleConfigSchema)
 }
 
-//
 func (s *mockConfigServer) Address() structure.AddressConfiguration {
 	return s.addr
 }
@@ -454,10 +501,12 @@ func (h *mockConfigServer) handleModuleRequirements(conn etp.Conn, data []byte) 
 
 	return []byte(utils.WsOkResponse)
 }
+func handleModuleRequirements_NotOkResponse(conn etp.Conn, data []byte) []byte {
+
+	return []byte("NOT OK")
+}
 
 func (h *mockConfigServer) handleConfigSchema(conn etp.Conn, data []byte) []byte {
-	//fmt.Printf("-2handled ConfigSchema: %v\n", conn.ID())
-
 	h.checkingChan <- CheckingEvent{typeEvent: eventHandledConfigSchema}
 
 	type confSchema struct {
