@@ -57,6 +57,7 @@ type RemoteConfig struct {
 const (
 	//moduleConnectToMockServer = 500 * time.Millisecond // нужно выбрать таймауты
 	compliteValidConnect = 500 * time.Millisecond
+	listenTimeout        = 700 * time.Millisecond
 	//compliteValidConnect      = 1 * time.Second
 )
 
@@ -86,9 +87,10 @@ type testingBox struct {
 	moduleInsertFuncs ModuleInsertFuncs
 	handleServerFuncs HandleServerFuncs
 	t                 *testing.T
-	order             []eventType
+	expectedOrder     []eventType
 	tmpDir            string
 	conn              etp.Conn
+	errorHandling     func(CheckingEvent, int) string
 }
 
 type CheckingChan chan CheckingEvent
@@ -163,31 +165,45 @@ func (tb *testingBox) testingServersRun(mFuncs *ModuleFuncs) {
 		Run()
 }
 
-func (tb *testingBox) testingListner(errorHandling func(CheckingEvent, int) string) {
-	//TODO решить нужно ли сначала принимать первый connect а потом ожидать
+func (tb *testingBox) testingListner() {
 	<-time.After(compliteValidConnect)
 
-	if len(tb.checkingChan) != len(tb.order) {
-		tb.t.Errorf("The number of events %d does not match the expected %d", len(tb.checkingChan), len(tb.order))
+	var index int
+	timeOut := time.After(listenTimeout)
+LOOP:
+	for {
+		select {
+		case event := <-tb.checkingChan:
+			index++
+			if index > len(tb.expectedOrder) {
+				if event.conn != nil {
+					tb.t.Errorf("%s(%s connID) at place %d overflows the expected events limit %d", event.typeEvent.String(), event.conn.ID(), index, len(tb.expectedOrder))
+				} else {
+					tb.t.Errorf("%s is exceed the expected number of events %d", event.typeEvent.String(), len(tb.expectedOrder))
+				}
+			}
+			if event.typeEvent == eventHandleConnect {
+				tb.conn = event.conn
+			}
+			if event.err != nil {
+				tb.t.Error(tb.errorHandling(event, index))
+			}
+			timeOut = time.After(listenTimeout)
+		case <-timeOut:
+			if index < len(tb.expectedOrder) {
+				for i := index; i < len(tb.expectedOrder); i++ {
+					tb.t.Errorf("Expected event %s did't appear", tb.expectedOrder[i])
+				}
+			}
+			break LOOP
+		}
 	}
-
-	//var event CheckingEvent
-	for index, orderItem := range tb.order {
-		event := <-tb.checkingChan
-		if event.typeEvent != orderItem {
-			tb.t.Errorf("The order is invalid in %d place \nexpected: %s\ngot: %s",
-				index, event.typeEvent.String(), orderItem.String())
-		}
-		if event.typeEvent == eventHandleConnect {
-			tb.conn = event.conn
-		}
-		if event.err != nil {
-			tb.t.Error(errorHandling(event, index))
-		}
+	if index != len(tb.expectedOrder) {
+		tb.t.Errorf("The number of events does not match: expected %d got %d", index, len(tb.expectedOrder))
 	}
 }
 
-func (tb *testingBox) reconnectAndListenModule(errorHandling func(CheckingEvent, int) string) {
+func (tb *testingBox) reconnectAndListenModule() {
 	if err := tb.conn.Close(); err != nil {
 		tb.t.Error(err)
 	}
@@ -203,7 +219,7 @@ func (tb *testingBox) reconnectAndListenModule(errorHandling func(CheckingEvent,
 		}
 	}
 
-	tb.testingListner(errorHandling)
+	tb.testingListner()
 }
 
 func makeDefaultTestingBox(t *testing.T) *testingBox {
@@ -214,30 +230,32 @@ func makeDefaultTestingBox(t *testing.T) *testingBox {
 			onRemoteConfigReceive: onRemoteConfigReceive,
 			onRemoteErrorReceive:  onRemoteErrorReceive,
 		},
-		order: []eventType{
+		expectedOrder: []eventType{
 			eventHandleConnect,
 			eventHandledConfigSchema,
 			eventRemoteConfigReceive,
 			eventHandleModuleReady,
 			eventHandleModuleRequirements,
 		},
+		errorHandling: errorHandlingFor_ValidNewModule,
 	}
+
 	tb.handleServerFuncs.handleConnect = func(conn etp.Conn) {
 		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleConnect, conn: conn}
 	}
 	tb.handleServerFuncs.handleDisconnect = func(conn etp.Conn, _ error) {
-		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleDisconnect}
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleDisconnect, conn: conn}
 	}
 	tb.handleServerFuncs.handleModuleReady = func(conn etp.Conn, data []byte) []byte {
-		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleReady}
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleReady, conn: conn}
 		return []byte(utils.WsOkResponse)
 	}
 	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
-		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements}
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
 		return []byte(utils.WsOkResponse)
 	}
 	tb.handleServerFuncs.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
-		tb.checkingChan <- CheckingEvent{typeEvent: eventHandledConfigSchema}
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
 
 		type confSchema struct {
 			Config json2.RawMessage
@@ -254,7 +272,7 @@ func makeDefaultTestingBox(t *testing.T) *testingBox {
 }
 
 func errorHandlingFor_ValidNewModule(event CheckingEvent, index int) string {
-	str := fmt.Sprintf("ERROR: At order %d event %s happend\n", index, event.typeEvent.String())
+	str := fmt.Sprintf("ERROR: At expectedOrder %d event %s happend\n", index, event.typeEvent.String())
 	switch event.typeEvent {
 	case eventRemoteConfigReceive:
 		str = fmt.Sprintf("%s%s\n", str, event.err)
@@ -277,18 +295,28 @@ func TestDefaultValid(t *testing.T) {
 	tb := makeDefaultTestingBox(t)
 
 	tb.testingServersRun(tb.insertCheckinChanInModule())
-	tb.testingListner(errorHandlingFor_ValidNewModule)
-	tb.reconnectAndListenModule(errorHandlingFor_ValidNewModule)
+	tb.testingListner()
+	tb.reconnectAndListenModule()
 
 	if err := os.RemoveAll(tb.tmpDir); err != nil {
 		t.Error(err)
 	}
-
-	return
 }
 
 func Test_handleModuleRequirements_NotOkResponse(t *testing.T) {
+	tb := makeDefaultTestingBox(t)
 
+	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
+		tb.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
+		return []byte("NOT OK")
+	}
+
+	tb.testingServersRun(tb.insertCheckinChanInModule())
+	tb.testingListner()
+	tb.reconnectAndListenModule()
+
+	//if this test has an errors, may be it be resolved in module_runner.go: func (b *runner) sendModuleRequirements()
+	// don't handled "not ok" answer from askEvent func
 }
 
 func setupConfig(t *testing.T, configAddr, configPort string) string {
@@ -366,8 +394,6 @@ func socketConfiguration(cfg interface{}) structure.SocketConfiguration {
 }
 
 func onRemoteConfigReceive(remoteConfig, _ *RemoteConfig, c chan<- CheckingEvent) {
-	fmt.Printf("-4onRemote ConfigReceive\n")
-
 	ce := CheckingEvent{typeEvent: eventRemoteConfigReceive}
 	if *remoteConfig == _validRemoteConfig {
 		c <- ce
@@ -441,29 +467,11 @@ func newMockServer(cc CheckingChan) *mockConfigServer {
 	return srv
 }
 
-//func (s *mockConfigServer) SubscribeAll(tb *testingBox) {
-//	s.etpServer.
-//		OnConnect(func(conn etp.Conn) {
-//			tb.handleServerFuncs.handleConnect(conn)
-//		}).
-//		OnDisconnect(s.handleDisconnect).
-//		//OnError(s.handleError). //TODO придумать что с этим делать
-//		OnWithAck(utils.ModuleReady, s.handleModuleReady).
-//		OnWithAck(utils.ModuleSendRequirements, func(conn etp.Conn, data []byte) []byte {
-//			s.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements}
-//			if f := th.handleModuleRequirements; f != nil {
-//				return f(conn, data)
-//			}
-//			return []byte(utils.WsOkResponse)
-//		}).
-//		OnWithAck(utils.ModuleSendConfigSchema, s.handleConfigSchema)
-//}
-
 func (s *mockConfigServer) SubscribeAll(th HandleServerFuncs) {
 	s.etpServer.
 		OnConnect(th.handleConnect).
 		OnDisconnect(th.handleDisconnect).
-		//OnError(s.handleError). //придумать что с этим делать
+		//OnError(s.handleError). //TODO придумать что с этим делать
 		OnWithAck(utils.ModuleReady, th.handleModuleReady).
 		OnWithAck(utils.ModuleSendRequirements, th.handleModuleRequirements).
 		OnWithAck(utils.ModuleSendConfigSchema, th.handleConfigSchema)
@@ -500,10 +508,6 @@ func (h *mockConfigServer) handleModuleRequirements(conn etp.Conn, data []byte) 
 	h.checkingChan <- CheckingEvent{typeEvent: eventHandleModuleRequirements}
 
 	return []byte(utils.WsOkResponse)
-}
-func handleModuleRequirements_NotOkResponse(conn etp.Conn, data []byte) []byte {
-
-	return []byte("NOT OK")
 }
 
 func (h *mockConfigServer) handleConfigSchema(conn etp.Conn, data []byte) []byte {
