@@ -3,8 +3,8 @@ package bootstrap
 import (
 	"context"
 	json2 "encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,25 +14,8 @@ import (
 	"github.com/integration-system/isp-lib/v2/utils"
 )
 
-/*
-[2020-04-27T16:47:50.183+03:00] [WARN ] [0078] [failed to heartbeat config service: failed to ping: failed to write control frame opPing: websocket closed: failed to wait for pong: context deadline exceeded] []
-[2020-04-27T16:47:50.183+03:00] [ERROR] [0078] [disconnected from config service ws://10.250.9.40:9001/isp-etp/?instance_uuid=ec183598-746a-425f-b5e5-27b7fa8bc6af&module_name=oauth: failed to get reader: failed to read frame header: websocket closed: failed to wait for pong: context deadline exceeded] []
-[2020-04-27T16:47:57.597+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_CONFIG_SCHEMA"]
-[2020-04-27T16:47:58.252+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_REQUIREMENTS"]
-[2020-04-27T16:47:59.098+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_CONFIG_SCHEMA"]
-[2020-04-27T16:48:01.161+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_CONFIG_SCHEMA"]
-[2020-04-27T16:48:01.835+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_REQUIREMENTS"]
-[2020-04-27T16:48:03.793+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:SEND_REQUIREMENTS"]
-[2020-04-27T16:48:05.375+03:00] [ERROR] [0077] [ack event to config service: failed to write msg: websocket closed: failed to wait for pong: context deadline exceeded] [event="MODULE:READY"]
-
-
-
-[2020-04-29T13:05:10.161+03:00] [FATAL] [0031] [could not read local config: read local config file: Config File "config" Not Found in "[/home/max/Projects/!altarix/isp-lib/bootstrap/conf]"] []
-
-*/
-
 const (
-	compliteValidConnect = 500 * time.Millisecond
+	completeValidConnect = 500 * time.Millisecond
 	listenTimeout        = 700 * time.Millisecond
 )
 
@@ -60,7 +43,7 @@ func (tb *testingBox) testingServersRun() {
 }
 
 func (tb *testingBox) testingListener() {
-	<-time.After(compliteValidConnect)
+	<-time.After(completeValidConnect)
 
 	var index int
 	timeOut := time.After(listenTimeout)
@@ -103,11 +86,11 @@ func (tb *testingBox) closeConnectModule() {
 	if err := tb.conn.Close(); err != nil {
 		tb.t.Error(err)
 	}
-	timeout := time.After(compliteValidConnect)
+	timeout := time.After(completeValidConnect)
 
 	select {
 	case <-timeout:
-		tb.t.Errorf("Time to reconnect after disconnect is over: %v", compliteValidConnect)
+		tb.t.Errorf("Time to reconnect after disconnect is over: %v", completeValidConnect)
 		return
 	case event := <-tb.checkingChan:
 		if event.typeEvent != eventHandleDisconnect {
@@ -116,6 +99,8 @@ func (tb *testingBox) closeConnectModule() {
 	}
 }
 
+//	Валидный тест, проверяет насколько подключение прошло успешно
+//	В качестве проверяемых параметров используется количество и порядок событий
 func TestDefaultValid(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
 
@@ -123,11 +108,14 @@ func TestDefaultValid(t *testing.T) {
 	tb.testingListener()
 	tb.closeConnectModule()
 	tb.testingListener()
-	if err := os.RemoveAll(tb.tmpDir); err != nil {
-		t.Error(err)
-	}
+
 }
 
+//	Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
+//или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
+//	Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
+//handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами
+//go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady()
 func Test_handleModuleRequirements_NotOkResponse(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
 
@@ -138,41 +126,39 @@ func Test_handleModuleRequirements_NotOkResponse(t *testing.T) {
 
 	tb.testingServersRun()
 	tb.testingListener()
-	if err := os.RemoveAll(tb.tmpDir); err != nil {
-		t.Error(err)
-	}
 
 	//if this test has an errors, may be it be resolved in module_runner.go: func (b *runner) sendModuleRequirements()
 	// don't handled "not ok" answer from askEvent func
 }
 
+//	В этом тесте производим отправку невалидного конфига в обработчике handleConfigSchema
+//	Под невалидным понимается конфиг с иными полями
+//	При получении невалидного конфига модуль завершает свою работу с фатальной ошибкой с описанием невалидных полей в конфигурации
 func Test_moduleReceivedAnotherConfig(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
 
 	tb.handleServerFuncs.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
 		fmt.Println("In eventHandledConfigSchema was sent different configSchema")
 		ce := checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
+		defer func() {
+			tb.checkingChan <- ce
+		}()
 
 		jsonInvalidConfig, err := json2.Marshal(_invalidRemoteConfig)
 		if err != nil {
 			ce.err = err
-			tb.checkingChan <- ce
 			return []byte(err.Error())
 		}
 		if err := conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected, jsonInvalidConfig); err != nil {
 			ce.err = err
-			tb.checkingChan <- ce
 			return []byte(err.Error())
 		}
-		tb.checkingChan <- ce
 		return []byte(utils.WsOkResponse)
 	}
 
 	tb.testingServersRun()
 	tb.testingListener()
-	if err := os.RemoveAll(tb.tmpDir); err != nil {
-		t.Error(err)
-	}
+
 	//TODO разобраться правильно ли реализован тест
 	//а именно в каком месте должна производиться проверка на соответствие "родного" конфига и полученного от конфиг-сервиса
 }

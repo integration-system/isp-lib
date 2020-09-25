@@ -132,13 +132,12 @@ func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 func (m *moduleFuncs) setDefault(cc checkingChan) {
 	m.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
 		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
-		if *remoteConfig == _validRemoteConfig {
-		} else {
+		if *remoteConfig != _validRemoteConfig {
 			jsonConfig, err := json2.Marshal(remoteConfig)
 			if err != nil {
 				event.err = errors.New("can't Marshal handled remoteConfig")
 			} else {
-				event.err = errors.New("received from mock RemoteConfig is not matches with original")
+				event.err = errors.New("received from mock RemoteConfig is not matches with _validRemoteConfig")
 				event.data = jsonConfig
 			}
 		}
@@ -166,6 +165,9 @@ func (h *handleServerFuncs) setDefault(cc checkingChan) {
 	}
 	h.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
 		event := checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
+		defer func() {
+			cc <- event
+		}()
 
 		type confSchema struct {
 			Config json2.RawMessage
@@ -173,15 +175,12 @@ func (h *handleServerFuncs) setDefault(cc checkingChan) {
 		var configSchema confSchema
 		if err := json.Unmarshal(data, &configSchema); err != nil {
 			event.err = err
-			cc <- event
 			return []byte(err.Error())
 		}
 		if err := conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected, configSchema.Config); err != nil {
 			event.err = err
-			cc <- event
 			return []byte(err.Error())
 		}
-		cc <- event
 		return []byte(utils.WsOkResponse)
 	}
 }
