@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	jsoniter "github.com/json-iterator/go"
 	"os"
 	"os/signal"
 	"path"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	jsoniter "github.com/json-iterator/go"
 
 	log "github.com/integration-system/isp-log"
 	"github.com/integration-system/isp-log/stdcodes"
@@ -100,27 +101,26 @@ func InitConfigV2(configuration interface{}, callOnChangeHandler bool) interface
 	return configInstance
 }
 
-func InitRemoteConfig(configuration interface{}, remoteConfig []byte) interface{} {
+func InitRemoteConfig(configuration interface{}, remoteConfig []byte) (interface{}, error) {
 	newRemoteConfig, err := overrideConfigurationFromEnv(remoteConfig, RemoteConfigEnvPrefix)
 	if err != nil {
-		log.WithMetadata(log.Metadata{"config": string(remoteConfig)}).
-			Fatalf(stdcodes.ModuleOverrideRemoteConfigError, "could not override remote config via env: %v", err)
-		return nil
+		return nil,
+			fmt.Errorf("could not override remote config via env: %v, config=%s", err, string(remoteConfig))
 	}
 	log.WithMetadata(log.Metadata{"config": string(newRemoteConfig)}).
 		Info(stdcodes.ConfigServiceReceiveConfiguration, "received remote config")
 	newConfiguration := reflect.New(reflect.TypeOf(configuration).Elem()).Interface()
 	if err := json.Unmarshal(newRemoteConfig, newConfiguration); err != nil {
-		log.WithMetadata(log.Metadata{"data": string(remoteConfig)}).
-			Fatalf(stdcodes.ModuleInvalidRemoteConfig, "received invalid remote config: %v", err)
+		return nil,
+			fmt.Errorf("received invalid remote config: %vconfig=%s", err, string(remoteConfig))
 	} else if err := validateConfig(newConfiguration); err != nil {
-		log.WithMetadata(log.Metadata{"config": string(remoteConfig)}).
-			Fatalf(stdcodes.ModuleInvalidRemoteConfig, "received invalid remote config: %v", err)
+		return nil,
+			fmt.Errorf("received invalid remote config: %vconfig=%s", err, string(remoteConfig))
 	} else {
 		remoteConfigInstance = newConfiguration
 	}
 
-	return remoteConfigInstance
+	return remoteConfigInstance, nil
 }
 
 // Example:

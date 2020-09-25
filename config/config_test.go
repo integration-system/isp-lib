@@ -1,9 +1,10 @@
 package config
 
 import (
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRemoteConfigOverride(t *testing.T) {
@@ -41,8 +42,11 @@ func TestRemoteConfigOverride(t *testing.T) {
 	assert.Nil(os.Setenv(RemoteConfigEnvPrefix+"_D.CAMELCASE", "test2#{string}"))
 	assert.Nil(os.Setenv(RemoteConfigEnvPrefix+"_D.V", "test5#{string}"))
 
-	ptr := InitRemoteConfig(&original, bytes).(*Config)
-	original = *ptr
+	ptr, err := InitRemoteConfig(&original, bytes)
+	if err != nil {
+		//TODO описать реакцию
+	}
+	original = *ptr.(*Config)
 
 	assert.Equal(expect, original)
 }
@@ -53,12 +57,20 @@ func TestInitRemoteConfig(t *testing.T) {
 	oldConfig, expectedConfig := getFirstConfData()
 	remoteConfig, err := json.Marshal(expectedConfig)
 	assert.NoError(err)
-	assert.Equal(expectedConfig, InitRemoteConfig(oldConfig, remoteConfig))
+	ptr, err := InitRemoteConfig(oldConfig, remoteConfig)
+	if err != nil {
+		//TODO описать реакцию
+	}
+	assert.Equal(expectedConfig, ptr)
 
 	secOldConf, secExpConf := getSecondConfData()
 	secRemoteConf, err := json.Marshal(secExpConf)
 	assert.NoError(err)
-	assert.Equal(secExpConf, InitRemoteConfig(secOldConf, secRemoteConf))
+	ptr, err = InitRemoteConfig(secOldConf, secRemoteConf)
+	if err != nil {
+		//TODO описать реакцию
+	}
+	assert.Equal(secExpConf, ptr)
 }
 
 func getFirstConfData() (oldConfig, newConfig interface{}) {

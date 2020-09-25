@@ -31,7 +31,7 @@ type Configuration struct {
 }
 
 type RemoteConfig struct {
-	Something string
+	Something string `valid:"required~Required"`
 }
 
 type mockConfigServer struct {
@@ -58,14 +58,15 @@ type checkingEvent struct {
 }
 
 type testingBox struct {
-	checkingChan           chan checkingEvent
-	moduleFuncs            moduleFuncs
-	handleServerFuncs      handleServerFuncs
-	listenerHandlingErrors listenerHandlingErrors
-	t                      *testing.T
-	expectedOrder          []eventType
-	tmpDir                 string
-	conn                   etp.Conn
+	checkingChan             chan checkingEvent
+	moduleFuncs              moduleFuncs
+	handleServerFuncs        handleServerFuncs
+	handleTestingErrorsFuncs handleTestingErrorsFuncs
+	t                        *testing.T
+	expectedOrder            []eventType
+	tmpDir                   string
+	conn                     etp.Conn
+	moduleRunner             *runner
 }
 
 type moduleFuncs struct {
@@ -79,17 +80,19 @@ type handleServerFuncs struct {
 	handleModuleReady        func(conn etp.Conn, data []byte) []byte
 	handleModuleRequirements func(conn etp.Conn, data []byte) []byte
 	handleConfigSchema       func(conn etp.Conn, data []byte) []byte
+	handleTestingEvent       func(conn etp.Conn, data []byte) []byte
 }
 
-type listenerHandlingErrors struct {
+type handleTestingErrorsFuncs struct {
 	errorRemoteConfigReceive func(event checkingEvent, str string) string
 	errorHandledConfigSchema func(event checkingEvent, str string) string
+	errorHandlingTestRun     func(err error, t *testing.T)
 }
 
 type checkingChan chan checkingEvent
 type eventType uint
 
-func (et eventType) string() string {
+func (et eventType) String() string {
 	switch et {
 	case eventHandleConnect:
 		return "eventHandleConnect"
@@ -124,7 +127,7 @@ func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 
 	tb.moduleFuncs.setDefault(tb.checkingChan)
 	tb.handleServerFuncs.setDefault(tb.checkingChan)
-	tb.listenerHandlingErrors.setDefault()
+	tb.handleTestingErrorsFuncs.setDefault()
 
 	return tb
 }
@@ -185,7 +188,7 @@ func (h *handleServerFuncs) setDefault(cc checkingChan) {
 	}
 }
 
-func (l *listenerHandlingErrors) setDefault() {
+func (l *handleTestingErrorsFuncs) setDefault() {
 	l.errorRemoteConfigReceive = func(event checkingEvent, str string) string {
 		str = fmt.Sprintf("%s%s\n", str, event.err)
 		if len(event.data) != 0 {
@@ -202,15 +205,20 @@ func (l *listenerHandlingErrors) setDefault() {
 	l.errorHandledConfigSchema = func(event checkingEvent, str string) string {
 		return fmt.Sprintf("%s %s", str, event.err)
 	}
+	l.errorHandlingTestRun = func(err error, t *testing.T) {
+		if err != nil {
+			t.Errorf("run method was stopped by error: %v", err)
+		}
+	}
 }
 
 func (tb *testingBox) errorHandling(event checkingEvent, index int) string {
-	str := fmt.Sprintf("ERROR: At order %d was happend %s\n", index, event.typeEvent.string())
+	str := fmt.Sprintf("ERROR: At order %d was happend %s\n", index, event.typeEvent)
 	switch event.typeEvent {
 	case eventRemoteConfigReceive:
-		return tb.listenerHandlingErrors.errorRemoteConfigReceive(event, str)
+		return tb.handleTestingErrorsFuncs.errorRemoteConfigReceive(event, str)
 	case eventHandledConfigSchema:
-		return tb.listenerHandlingErrors.errorHandledConfigSchema(event, str)
+		return tb.handleTestingErrorsFuncs.errorHandledConfigSchema(event, str)
 	}
 	return str
 }

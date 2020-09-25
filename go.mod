@@ -43,6 +43,6 @@ require (
 	golang.org/x/tools v0.0.0-20200826040757-bc8aaaa29e06 // indirect
 	google.golang.org/genproto v0.0.0-20200413115906-b5235f65be36
 	google.golang.org/grpc v1.29.1
-	gopkg.in/yaml.v2 v2.3.0 // indirect
+	gopkg.in/yaml.v2 v2.3.0
 	nhooyr.io/websocket v1.8.4
 )

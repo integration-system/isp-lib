@@ -146,9 +146,9 @@ func ackEvent(client etp.Client, event string, data interface{}, bf backoff.Back
 	return true, bytes, response
 }
 
-func getDefaultBackoff(ctx context.Context, maxElapsedTime time.Duration) backoff.BackOff {
+func getDefaultBackoff(ctx context.Context) backoff.BackOff {
 	backOff := backoff.NewExponentialBackOff()
-	backOff.MaxElapsedTime = maxElapsedTime
+	backOff.MaxElapsedTime = defaultMaxAckRetryTimeout
 	bf := backoff.WithContext(backOff, ctx)
 	return bf
 }
