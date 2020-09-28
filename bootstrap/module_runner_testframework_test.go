@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	etp "github.com/integration-system/isp-etp-go/v2"
 	"github.com/integration-system/isp-lib/v2/config"
@@ -58,15 +59,16 @@ type checkingEvent struct {
 }
 
 type testingBox struct {
-	checkingChan             chan checkingEvent
-	moduleFuncs              moduleFuncs
-	handleServerFuncs        handleServerFuncs
-	handleTestingErrorsFuncs handleTestingErrorsFuncs
-	t                        *testing.T
-	expectedOrder            []eventType
-	tmpDir                   string
-	conn                     etp.Conn
-	moduleRunner             *runner
+	checkingChan      chan checkingEvent
+	moduleReadyChan   chan checkingEvent
+	moduleFuncs       moduleFuncs
+	handleServerFuncs handleServerFuncs
+	testingFuncs      testingFuncs
+	t                 *testing.T
+	expectedOrder     []eventType
+	tmpDir            string
+	conn              etp.Conn
+	moduleRunner      *runner
 }
 
 type moduleFuncs struct {
@@ -83,10 +85,11 @@ type handleServerFuncs struct {
 	handleTestingEvent       func(conn etp.Conn, data []byte) []byte
 }
 
-type handleTestingErrorsFuncs struct {
+type testingFuncs struct {
 	errorRemoteConfigReceive func(event checkingEvent, str string) string
 	errorHandledConfigSchema func(event checkingEvent, str string) string
 	errorHandlingTestRun     func(err error, t *testing.T)
+	waitFullConnect          func(tb *testingBox)
 }
 
 type checkingChan chan checkingEvent
@@ -114,25 +117,27 @@ func (et eventType) String() string {
 }
 
 func (tb *testingBox) setDefault(t *testing.T) *testingBox {
+	defaultMaxAckRetryTimeout = 10 * time.Second
 
 	tb.t = t
 	tb.checkingChan = make(checkingChan, 20)
+	tb.moduleReadyChan = make(checkingChan)
 	tb.expectedOrder = []eventType{
 		eventHandleConnect,
 		eventHandledConfigSchema,
 		eventRemoteConfigReceive,
-		eventHandleModuleReady,
 		eventHandleModuleRequirements,
+		eventHandleModuleReady,
 	}
 
 	tb.moduleFuncs.setDefault(tb.checkingChan)
-	tb.handleServerFuncs.setDefault(tb.checkingChan)
-	tb.handleTestingErrorsFuncs.setDefault()
+	tb.handleServerFuncs.setDefault(tb.checkingChan, tb.moduleReadyChan)
+	tb.testingFuncs.setDefault()
 
 	return tb
 }
 
-func (m *moduleFuncs) setDefault(cc checkingChan) {
+func (m *moduleFuncs) setDefault(checkingChan checkingChan) {
 	m.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
 		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
 		if *remoteConfig != _validRemoteConfig {
@@ -144,32 +149,34 @@ func (m *moduleFuncs) setDefault(cc checkingChan) {
 				event.data = jsonConfig
 			}
 		}
-		cc <- event
+		checkingChan <- event
 	}
 	m.onRemoteErrorReceive = func(errorMessage map[string]interface{}) {
-		cc <- checkingEvent{typeEvent: eventRemoteConfigErrorReceive}
+		checkingChan <- checkingEvent{typeEvent: eventRemoteConfigErrorReceive}
 	}
 }
 
-func (h *handleServerFuncs) setDefault(cc checkingChan) {
+func (h *handleServerFuncs) setDefault(checkingChan, moduleReadyChan checkingChan) {
 	h.handleConnect = func(conn etp.Conn) {
-		cc <- checkingEvent{typeEvent: eventHandleConnect, conn: conn}
+		checkingChan <- checkingEvent{typeEvent: eventHandleConnect, conn: conn}
 	}
 	h.handleDisconnect = func(conn etp.Conn, _ error) {
-		cc <- checkingEvent{typeEvent: eventHandleDisconnect, conn: conn}
+		checkingChan <- checkingEvent{typeEvent: eventHandleDisconnect, conn: conn}
 	}
 	h.handleModuleReady = func(conn etp.Conn, data []byte) []byte {
-		cc <- checkingEvent{typeEvent: eventHandleModuleReady, conn: conn}
+		event := checkingEvent{typeEvent: eventHandleModuleReady, conn: conn}
+		checkingChan <- event
+		moduleReadyChan <- event
 		return []byte(utils.WsOkResponse)
 	}
 	h.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
-		cc <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
+		checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
 		return []byte(utils.WsOkResponse)
 	}
 	h.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
 		event := checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
 		defer func() {
-			cc <- event
+			checkingChan <- event
 		}()
 
 		type confSchema struct {
@@ -188,8 +195,8 @@ func (h *handleServerFuncs) setDefault(cc checkingChan) {
 	}
 }
 
-func (l *handleTestingErrorsFuncs) setDefault() {
-	l.errorRemoteConfigReceive = func(event checkingEvent, str string) string {
+func (t *testingFuncs) setDefault() {
+	t.errorRemoteConfigReceive = func(event checkingEvent, str string) string {
 		str = fmt.Sprintf("%s%s\n", str, event.err)
 		if len(event.data) != 0 {
 			var dataUnmarsh RemoteConfig
@@ -202,12 +209,20 @@ func (l *handleTestingErrorsFuncs) setDefault() {
 		}
 		return str
 	}
-	l.errorHandledConfigSchema = func(event checkingEvent, str string) string {
+	t.errorHandledConfigSchema = func(event checkingEvent, str string) string {
 		return fmt.Sprintf("%s %s", str, event.err)
 	}
-	l.errorHandlingTestRun = func(err error, t *testing.T) {
+	t.errorHandlingTestRun = func(err error, t *testing.T) {
 		if err != nil {
 			t.Errorf("run method was stopped by error: %v", err)
+		}
+	}
+	t.waitFullConnect = func(tb *testingBox) {
+		timeout := time.After(timeoutValidConnect)
+		select {
+		case <-timeout:
+			tb.t.Errorf("Waiting time %s for full connect module is over", timeoutValidConnect)
+		case <-tb.moduleReadyChan:
 		}
 	}
 }
@@ -216,9 +231,9 @@ func (tb *testingBox) errorHandling(event checkingEvent, index int) string {
 	str := fmt.Sprintf("ERROR: At order %d was happend %s\n", index, event.typeEvent)
 	switch event.typeEvent {
 	case eventRemoteConfigReceive:
-		return tb.handleTestingErrorsFuncs.errorRemoteConfigReceive(event, str)
+		return tb.testingFuncs.errorRemoteConfigReceive(event, str)
 	case eventHandledConfigSchema:
-		return tb.handleTestingErrorsFuncs.errorHandledConfigSchema(event, str)
+		return tb.testingFuncs.errorHandledConfigSchema(event, str)
 	}
 	return str
 }

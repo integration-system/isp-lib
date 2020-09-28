@@ -15,17 +15,18 @@ import (
 )
 
 const (
-	completeValidConnect = 100 * time.Millisecond
-	listenTimeout        = 700 * time.Millisecond
+	timeoutValidConnect = 3 * time.Second
+	timeoutListen       = 700 * time.Millisecond
+	timeoutDisconnect   = 100 * time.Millisecond
 )
 
 var _validRemoteConfig = RemoteConfig{Something: "Something text"}
 
-func (cfg *bootstrapConfiguration) testRun(c chan<- *runner, tb *testingBox) {
+func (cfg *bootstrapConfiguration) testRun(tb *testingBox) {
 	runner := makeRunner(*cfg)
-	c <- runner
+	tb.moduleRunner = runner
 	err := runner.run()
-	tb.handleTestingErrorsFuncs.errorHandlingTestRun(err, tb.t)
+	tb.testingFuncs.errorHandlingTestRun(err, tb.t)
 }
 
 func (tb *testingBox) testingServersRun() {
@@ -33,7 +34,6 @@ func (tb *testingBox) testingServersRun() {
 	ms.subscribeAll(tb.handleServerFuncs)
 
 	tb.tmpDir = setupConfig(tb.t, "127.0.0.1", ms.addr.Port)
-	runnerChan := make(chan *runner)
 
 	cfg := ServiceBootstrap(&Configuration{}, &RemoteConfig{}).
 		DefaultRemoteConfigPath(schema.ResolveDefaultConfigPath(filepath.Join(tb.tmpDir, "/default_remote_config.json"))).
@@ -44,15 +44,14 @@ func (tb *testingBox) testingServersRun() {
 		DeclareMe(makeDeclaration).
 		OnRemoteConfigReceive(tb.moduleFuncs.onRemoteConfigReceive)
 	//OnShutdown(onShutdown).
-	go cfg.testRun(runnerChan, tb)
-	tb.moduleRunner = <-runnerChan
+	go cfg.testRun(tb)
+
+	tb.testingFuncs.waitFullConnect(tb)
 }
 
 func (tb *testingBox) testingListener() {
-	<-time.After(completeValidConnect)
-
 	var index int
-	timeOut := time.After(listenTimeout)
+	timeOut := time.After(timeoutListen)
 LOOP:
 	for {
 		select {
@@ -76,7 +75,7 @@ LOOP:
 				tb.t.Error(tb.errorHandling(event, index))
 			}
 			index++
-			timeOut = time.After(listenTimeout)
+			timeOut = time.After(timeoutListen)
 		case <-timeOut:
 			if index < len(tb.expectedOrder) {
 				for i := index; i < len(tb.expectedOrder); i++ {
@@ -91,21 +90,21 @@ LOOP:
 	}
 }
 
-func (tb *testingBox) closeConnectModule() {
+func (tb *testingBox) reconnectModule() {
 	if err := tb.conn.Close(); err != nil {
 		tb.t.Error(err)
 	}
-	timeout := time.After(completeValidConnect)
+	timeout := time.After(timeoutDisconnect)
 
 	select {
 	case <-timeout:
-		tb.t.Errorf("Time to reconnect after disconnect is over: %v", completeValidConnect)
-		return
+		tb.t.Errorf("Time to reconnect after disconnect is over: %v", timeoutDisconnect)
 	case event := <-tb.checkingChan:
 		if event.typeEvent != eventHandleDisconnect {
 			tb.t.Errorf("Expected event %s got %s", eventHandleDisconnect, event.typeEvent)
 		}
 	}
+	tb.testingFuncs.waitFullConnect(tb)
 }
 
 //	Валидный тест, проверяет насколько подключение прошло успешно
@@ -115,29 +114,41 @@ func TestDefaultValid(t *testing.T) {
 
 	tb.testingServersRun()
 	tb.testingListener()
-	tb.closeConnectModule()
+	tb.reconnectModule()
 	tb.testingListener()
 
 }
 
+//	WORK IN PROGRESS
 //	Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
 //или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
 //	Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
 //handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами
 //go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady()
-func Test_handleModuleRequirements_NotOkResponse(t *testing.T) {
+//	Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
+//возвращенный соответствующей функцией ackEvent
+func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
+	defaultMaxAckRetryTimeout = 2 * time.Second // время, до конторого будет производиться попытки перезапроса, после ответа отличного от utils.WsOkResponse
+
+	var startTime, zeroTime time.Time
 
 	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
 		tb.checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
-		return []byte("NOT OK")
+		if startTime == zeroTime {
+			startTime = time.Now()
+		}
+		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
+			fmt.Println("Not OK")
+			return []byte("NOT OK")
+		} else {
+			fmt.Println("OK")
+			return []byte(utils.WsOkResponse)
+		}
 	}
 
 	tb.testingServersRun()
 	tb.testingListener()
-
-	//if this test has an errors, may be it be resolved in module_runner.go: func (b *runner) sendModuleRequirements()
-	// don't handled "not ok" answer from askEvent func
 }
 
 //	В этом тесте производим отправку невалидного конфига в обработчике handleConfigSchema
@@ -181,16 +192,24 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		}
 		tb.checkingChan <- event
 	}
-	tb.handleTestingErrorsFuncs.errorHandlingTestRun = func(err error, t *testing.T) {
+	tb.testingFuncs.errorHandlingTestRun = func(err error, t *testing.T) {
 		if err == nil {
 			t.Errorf("Expected errror from run method, but received none")
 			return
 		}
-		jsonConfig, _ := json2.Marshal(RemoteConfig{Something: "Something text"})
+		jsonConfig, _ := json2.Marshal(_validRemoteConfig)
 		jsonConfig[2] = jsonConfig[2] + 33
-		expectedErr := fmt.Errorf("received invalid remote config: Something -> Required, config=%v", string(jsonConfig))
+		expectedErr := fmt.Errorf("received invalid remote config: Something -> Required, config=%v", string(jsonConfig)) //TODO Something -> Required так же нужно генерировать
 		if err.Error() != expectedErr.Error() {
 			t.Errorf("Expected errror: \n%v\n but got: \n%v", expectedErr, err)
+		}
+	}
+	tb.testingFuncs.waitFullConnect = func(tb *testingBox) {
+		timeout := time.After(timeoutValidConnect)
+		select {
+		case <-timeout:
+		case <-tb.moduleReadyChan:
+			tb.t.Errorf("Connect was established")
 		}
 	}
 
