@@ -65,7 +65,7 @@ func makeRunner(cfg bootstrapConfiguration) *runner {
 	}
 }
 
-func (b *runner) run() error {
+func (b *runner) run() (ret error) {
 	b.RequireModule("isp-gate", func(list []structure.AddressConfiguration) bool {
 		if len(list) > 0 {
 			address := list[0]
@@ -81,7 +81,7 @@ func (b *runner) run() error {
 		err := recover()
 		if err != nil {
 			debug.PrintStack()
-			log.Fatalf(stdcodes.ModuleRunFatalError, "could not run module, fatal error occurred: %v", err)
+			ret = fmt.Errorf("[%04d] could not run module, fatal error occurred: %v", stdcodes.ModuleRunFatalError, err)
 		}
 	}()
 

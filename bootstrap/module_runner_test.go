@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"context"
 	json2 "encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +64,6 @@ LOOP:
 					tb.t.Errorf("%s is exceed the expected number of events %d",
 						event.typeEvent, len(tb.expectedOrder))
 				}
-
 			} else if event.typeEvent != tb.expectedOrder[index] { // TODO найти решение для hard и soft списков
 				tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[index], event.typeEvent)
 			}
@@ -107,8 +106,8 @@ func (tb *testingBox) reconnectModule() {
 	tb.testingFuncs.waitFullConnect(tb)
 }
 
-//	Валидный тест, проверяет насколько подключение прошло успешно
-//	В качестве проверяемых параметров используется количество и порядок событий
+// Валидный тест, проверяет насколько подключение прошло успешно.
+// В качестве проверяемых параметров используется количество и порядок событий.
 func TestDefaultValid(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
 
@@ -119,17 +118,17 @@ func TestDefaultValid(t *testing.T) {
 
 }
 
-//	WORK IN PROGRESS
-//	Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
-//или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
-//	Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
-//handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами
-//go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady()
-//	Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
-//возвращенный соответствующей функцией ackEvent
+// WORK IN PROGRESS
+// Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
+// или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
+// Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
+// handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами:
+// go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady().
+// Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
+// возвращенный соответствующей функцией ackEvent
 func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
-	defaultMaxAckRetryTimeout = 2 * time.Second // время, до конторого будет производиться попытки перезапроса, после ответа отличного от utils.WsOkResponse
+	defaultMaxAckRetryTimeout = 2 * time.Second
 
 	var startTime, zeroTime time.Time
 
@@ -151,9 +150,10 @@ func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 	tb.testingListener()
 }
 
-//	В этом тесте производим отправку невалидного конфига в обработчике handleConfigSchema
-//	Под невалидным понимается конфиг с иными полями
-//	При получении невалидного конфига модуль завершает свою работу с фатальной ошибкой с описанием невалидных полей в конфигурации
+// В этом тесте производим отправку невалидного конфига в обработчике handleConfigSchema
+// Под невалидным понимается конфиг с иными полями
+// При получении невалидного конфига модуль завершает свою работу
+// фатальной ошибкой с описанием невалидных полей в конфигурации
 func Test_moduleReceivedAnotherConfig(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
 
@@ -162,7 +162,6 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		eventHandledConfigSchema,
 	}
 	tb.handleServerFuncs.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
-		fmt.Println("In eventHandledConfigSchema was sent different configSchema")
 		event := checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
 		defer func() {
 			tb.checkingChan <- event
@@ -183,12 +182,11 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		}
 		return []byte(utils.WsOkResponse)
 	}
+	// TODO функция не вызывается по неизвестной причине
 	tb.moduleFuncs.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
 		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
 		if *remoteConfig == _validRemoteConfig {
-			jsonConfig, _ := json2.Marshal(remoteConfig)
-			event.err = errors.New("received from mock RemoteConfig is not INVALID, witch expected")
-			event.data = jsonConfig
+			tb.t.Errorf("received from mock RemoteConfig is not INVALID, got: \n%v", *remoteConfig)
 		}
 		tb.checkingChan <- event
 	}
@@ -197,11 +195,8 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 			t.Errorf("Expected errror from run method, but received none")
 			return
 		}
-		jsonConfig, _ := json2.Marshal(_validRemoteConfig)
-		jsonConfig[2] = jsonConfig[2] + 33
-		expectedErr := fmt.Errorf("received invalid remote config: Something -> Required, config=%v", string(jsonConfig)) //TODO Something -> Required так же нужно генерировать
-		if err.Error() != expectedErr.Error() {
-			t.Errorf("Expected errror: \n%v\n but got: \n%v", expectedErr, err)
+		if !strings.HasPrefix(err.Error(), "received invalid remote config:") {
+			t.Errorf("Expected errror with prefix: \n\"received invalid remote config:\"\nbut got:\n%v", err)
 		}
 	}
 	tb.testingFuncs.waitFullConnect = func(tb *testingBox) {
