@@ -7,8 +7,6 @@ require (
 	github.com/buaazp/fasthttprouter v0.1.1
 	github.com/cenkalti/backoff/v4 v4.0.2
 	github.com/fsnotify/fsnotify v1.4.9
-	github.com/go-openapi/spec v0.19.9 // indirect
-	github.com/go-openapi/swag v0.19.9 // indirect
 	github.com/go-pg/pg/v9 v9.1.7
 	github.com/go-redis/redis/v8 v8.2.3
 	github.com/golang/protobuf v1.4.2
@@ -20,7 +18,6 @@ require (
 	github.com/integration-system/jsonschema v1.0.0
 	github.com/json-iterator/go v1.1.10
 	github.com/lib/pq v1.8.0
-	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/modern-go/reflect2 v1.0.1
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/nats-io/nats-server/v2 v2.1.8 // indirect
@@ -38,10 +35,7 @@ require (
 	github.com/swaggo/swag v1.6.7
 	github.com/thecodeteam/goodbye v0.0.0-20170927022442-a83968bda2d3
 	github.com/valyala/fasthttp v1.16.0
-	github.com/vmihailenco/bufpool v0.1.11 // indirect
-	github.com/vmihailenco/msgpack/v4 v4.3.11 // indirect
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
-	golang.org/x/tools v0.0.0-20200826040757-bc8aaaa29e06 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 	google.golang.org/grpc v1.32.0
 	google.golang.org/protobuf v1.25.0
