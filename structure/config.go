@@ -40,8 +40,9 @@ type RedisConfiguration struct {
 type RedisSentinel struct {
 	MasterName        string   `schema:"Наименование мастера"`
 	SentinelAddresses []string `schema:"Список адресов,host:port"`
-	SentinelUsername  string   `schema:"Логин Sentinel"`
-	SentinelPassword  string   `schema:"Пароль Sentinel"`
+	// Deprecated: для sentinel не нужен отдельный username
+	SentinelUsername string `schema:"Логин Sentinel,deprecated: поле больше не используется"`
+	SentinelPassword string `schema:"Пароль Sentinel"`
 }
 
 type RabbitConfig struct {

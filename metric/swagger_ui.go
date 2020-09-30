@@ -2,11 +2,14 @@ package metric
 
 import (
 	"bytes"
-	httpSwagger "github.com/swaggo/http-swagger"
-	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"fmt"
 	"html/template"
 	"path/filepath"
+
+	httpSwagger "github.com/swaggo/http-swagger"
+	"github.com/swaggo/swag"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 const indexTempl = `<!-- HTML for static distribution bundle build -->
@@ -167,6 +170,14 @@ func makeSwaggerHandler(metricIp string, metricPort string) func(*fasthttp.Reque
 	index, _ := t.Parse(indexTempl)
 
 	return func(ctx *fasthttp.RequestCtx) {
+		// check before swaggerHandler, otherwise it panics
+		_, err := swag.ReadDoc()
+		if err != nil {
+			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+			_, _ = fmt.Fprintf(ctx, "internal error: %v", err)
+			return
+		}
+
 		switch filepath.Ext(string(ctx.RequestURI())) {
 		case ".html":
 			ctx.SetContentType("text/html")

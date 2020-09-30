@@ -2,9 +2,10 @@ package redis
 
 import (
 	"context"
+	"time"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/integration-system/isp-lib/v2/structure"
-	"time"
 )
 
 type DB int
@@ -61,7 +62,6 @@ func newClient(cfg structure.RedisConfiguration) *redis.Client {
 			MasterName:       sentinel.MasterName,
 			SentinelAddrs:    sentinel.SentinelAddresses,
 			SentinelPassword: sentinel.SentinelPassword,
-			SentinelUsername: sentinel.SentinelUsername,
 			Username:         cfg.Username,
 			Password:         cfg.Password,
 			DB:               cfg.DefaultDB,

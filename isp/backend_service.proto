@@ -1,5 +1,6 @@
 syntax = "proto3";
-// /home/andrey/Applications/protoc/bin/protoc -I ./ proto/system.proto --go_out=plugins=grpc:./
+package isp;
+// protoc --go_out=plugins=grpc:. *.proto
 
 option go_package = ".;isp";
 

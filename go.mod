@@ -11,7 +11,7 @@ require (
 	github.com/go-openapi/swag v0.19.9 // indirect
 	github.com/go-pg/pg/v9 v9.1.7
 	github.com/go-redis/redis/v8 v8.0.0-beta.2
-	github.com/golang/protobuf v1.3.5
+	github.com/golang/protobuf v1.4.1
 	github.com/integration-system/bellows v1.0.0
 	github.com/integration-system/go-cmp v0.0.0-20190131081942-ac5582987a2f
 	github.com/integration-system/gowsdl v1.0.0
@@ -41,8 +41,9 @@ require (
 	github.com/vmihailenco/msgpack/v4 v4.3.11 // indirect
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	golang.org/x/tools v0.0.0-20200826040757-bc8aaaa29e06 // indirect
-	google.golang.org/genproto v0.0.0-20200413115906-b5235f65be36
+	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 	google.golang.org/grpc v1.29.1
+	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.3.0
 	nhooyr.io/websocket v1.8.4
 )

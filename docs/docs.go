@@ -20,14 +20,15 @@ type SwaggerInfo struct {
 }
 
 var (
-	swaggerInfo *SwaggerInfo
+	swaggerInfo = new(SwaggerInfo)
 	lock        = new(sync.Mutex)
 )
 
 func InitSwagger(info SwaggerInfo, doc string) {
 	lock.Lock()
 	defer lock.Unlock()
-	swaggerInfo = &info
+	*swaggerInfo = info
+	swaggerInfo.Description = strings.ReplaceAll(swaggerInfo.Description, "\n", "\\n")
 	swag.Register(swag.Name, &swagProvider{doc: doc, sInfo: swaggerInfo, lock: lock})
 }
 
@@ -46,7 +47,6 @@ type swagProvider struct {
 func (s *swagProvider) ReadDoc() string {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.sInfo.Description = strings.Replace(s.sInfo.Description, "\n", "\\n", -1)
 
 	t, err := template.New("swagger_info").Funcs(template.FuncMap{
 		"marshal": func(v interface{}) string {
