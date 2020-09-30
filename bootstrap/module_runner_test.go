@@ -64,7 +64,7 @@ LOOP:
 					tb.t.Errorf("%s is exceed the expected number of events %d",
 						event.typeEvent, len(tb.expectedOrder))
 				}
-			} else if event.typeEvent != tb.expectedOrder[index] { // TODO найти решение для hard и soft списков
+			} else if event.typeEvent != tb.expectedOrder[index] {
 				tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[index], event.typeEvent)
 			}
 			if event.typeEvent == eventHandleConnect {

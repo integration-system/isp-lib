@@ -89,7 +89,7 @@ func (b *runner) run() (ret error) {
 	b.initModuleInfo()                 //set moduleInfo
 	client := b.initSocketConnection() //create socket object, subscribe to all events
 	if client == nil {
-		return nil //TODO возможно можно вернуть ошибку
+		return nil
 	}
 	b.client = client
 	b.initStatusMetrics() //add socket and required modules connections checkers in metrics
@@ -191,9 +191,9 @@ func (b *runner) run() (ret error) {
 			case <-time.After(defaultConfigServiceConnectionTimeout):
 			}
 			client := b.initSocketConnection()
-			// true only if exitChan closed
+			// true only only if context done (shutdown module)
 			if client == nil {
-				return nil //TODO возможно можно вернуть ошибку
+				return nil
 			}
 			b.client = client
 			go b.sendModuleConfigSchema()

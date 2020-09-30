@@ -270,7 +270,6 @@ func (s *mockConfigServer) subscribeAll(th handleServerFuncs) {
 	s.etpServer.
 		OnConnect(th.handleConnect).
 		OnDisconnect(th.handleDisconnect).
-		//OnError(s.handleError). //TODO придумать что с этим делать
 		OnWithAck(utils.ModuleReady, th.handleModuleReady).
 		OnWithAck(utils.ModuleSendRequirements, th.handleModuleRequirements).
 		OnWithAck(utils.ModuleSendConfigSchema, th.handleConfigSchema)
