@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log"
 	"os"
 	"testing"
 
@@ -45,7 +44,7 @@ func TestRemoteConfigOverride(t *testing.T) {
 
 	ptr, err := InitRemoteConfig(&original, bytes)
 	if err != nil {
-		log.Fatalf("%v", err)
+		t.Errorf("%v", err)
 	}
 	original = *ptr.(*Config)
 
@@ -60,7 +59,7 @@ func TestInitRemoteConfig(t *testing.T) {
 	assert.NoError(err)
 	ptr, err := InitRemoteConfig(oldConfig, remoteConfig)
 	if err != nil {
-		log.Fatalf("%v", err)
+		t.Errorf("%v", err)
 	}
 	assert.Equal(expectedConfig, ptr)
 
@@ -69,7 +68,7 @@ func TestInitRemoteConfig(t *testing.T) {
 	assert.NoError(err)
 	ptr, err = InitRemoteConfig(secOldConf, secRemoteConf)
 	if err != nil {
-		log.Fatalf("%v", err)
+		t.Errorf("%v", err)
 	}
 	assert.Equal(secExpConf, ptr)
 }
