@@ -182,11 +182,11 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		}
 		return []byte(utils.WsOkResponse)
 	}
-	// TODO функция не вызывается по неизвестной причине
 	tb.moduleFuncs.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
+		tb.t.Errorf("received from mock config-service RemoteConfig did not cause of terminate the module")
 		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
 		if *remoteConfig == _validRemoteConfig {
-			tb.t.Errorf("received from mock RemoteConfig is not INVALID, got: \n%v", *remoteConfig)
+			tb.t.Errorf("received from mock config-service RemoteConfig is not INVALID, got: \n%v", *remoteConfig)
 		}
 		tb.checkingChan <- event
 	}
