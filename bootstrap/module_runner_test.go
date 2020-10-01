@@ -37,13 +37,11 @@ func (tb *testingBox) testingServersRun() {
 
 	cfg := ServiceBootstrap(&Configuration{}, &RemoteConfig{}).
 		DefaultRemoteConfigPath(schema.ResolveDefaultConfigPath(filepath.Join(tb.tmpDir, "/default_remote_config.json"))).
-		//OnLocalConfigLoad(onLocalConfigLoad).
 		SocketConfiguration(socketConfiguration).
 		OnSocketErrorReceive(tb.moduleFuncs.onRemoteErrorReceive).
-		//OnConfigErrorReceive(onRemoteConfigErrorReceive).
 		DeclareMe(makeDeclaration).
 		OnRemoteConfigReceive(tb.moduleFuncs.onRemoteConfigReceive)
-	//OnShutdown(onShutdown).
+
 	go cfg.testRun(tb)
 
 	tb.testingFuncs.waitFullConnect(tb)
@@ -118,38 +116,6 @@ func TestDefaultValid(t *testing.T) {
 
 }
 
-// WORK IN PROGRESS
-// Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
-// или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
-// Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
-// handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами:
-// go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady().
-// Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
-// возвращенный соответствующей функцией ackEvent
-func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
-	tb := (&testingBox{}).setDefault(t)
-	defaultMaxAckRetryTimeout = 2 * time.Second
-
-	var startTime, zeroTime time.Time
-
-	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
-		tb.checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
-		if startTime == zeroTime {
-			startTime = time.Now()
-		}
-		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
-			fmt.Println("Not OK")
-			return []byte("NOT OK")
-		} else {
-			fmt.Println("OK")
-			return []byte(utils.WsOkResponse)
-		}
-	}
-
-	tb.testingServersRun()
-	tb.testingListener()
-}
-
 // В этом тесте производим отправку невалидного конфига в обработчике handleConfigSchema
 // Под невалидным понимается конфиг с иными полями
 // При получении невалидного конфига модуль завершает свою работу
@@ -182,14 +148,6 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		}
 		return []byte(utils.WsOkResponse)
 	}
-	tb.moduleFuncs.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
-		tb.t.Errorf("received from mock config-service RemoteConfig did not cause of terminate the module")
-		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
-		if *remoteConfig == _validRemoteConfig {
-			tb.t.Errorf("received from mock config-service RemoteConfig is not INVALID, got: \n%v", *remoteConfig)
-		}
-		tb.checkingChan <- event
-	}
 	tb.testingFuncs.errorHandlingTestRun = func(err error, t *testing.T) {
 		if err == nil {
 			t.Errorf("Expected errror from run method, but received none")
@@ -205,6 +163,38 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		case <-timeout:
 		case <-tb.moduleReadyChan:
 			tb.t.Errorf("Connect was established")
+		}
+	}
+
+	tb.testingServersRun()
+	tb.testingListener()
+}
+
+// WORK IN PROGRESS
+// Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
+// или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
+// Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
+// handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами:
+// go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady().
+// Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
+// возвращенный соответствующей функцией ackEvent
+func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
+	tb := (&testingBox{}).setDefault(t)
+	defaultMaxAckRetryTimeout = 2 * time.Second
+
+	var startTime, zeroTime time.Time
+
+	tb.handleServerFuncs.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
+		tb.checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
+		if startTime == zeroTime {
+			startTime = time.Now()
+		}
+		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
+			fmt.Println("Not OK")
+			return []byte("NOT OK")
+		} else {
+			fmt.Println("OK")
+			return []byte(utils.WsOkResponse)
 		}
 	}
 

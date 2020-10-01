@@ -51,6 +51,29 @@ const (
 	eventRemoteConfigErrorReceive
 )
 
+type eventType uint
+
+func (et eventType) String() string {
+	switch et {
+	case eventHandleConnect:
+		return "eventHandleConnect"
+	case eventHandledConfigSchema:
+		return "eventHandledConfigSchema"
+	case eventHandleModuleRequirements:
+		return "eventHandleModuleRequirements"
+	case eventHandleModuleReady:
+		return "eventHandleModuleReady"
+	case eventHandleDisconnect:
+		return "eventHandleDisconnect"
+	case eventRemoteConfigReceive:
+		return "eventRemoteConfigReceive"
+	case eventRemoteConfigErrorReceive:
+		return "eventRemoteConfigErrorReceive"
+	default:
+		return "(ERROR: Can't find type of event)"
+	}
+}
+
 type checkingEvent struct {
 	typeEvent eventType
 	conn      etp.Conn
@@ -92,36 +115,12 @@ type testingFuncs struct {
 	waitFullConnect          func(tb *testingBox)
 }
 
-type checkingChan chan checkingEvent
-type eventType uint
-
-func (et eventType) String() string {
-	switch et {
-	case eventHandleConnect:
-		return "eventHandleConnect"
-	case eventHandledConfigSchema:
-		return "eventHandledConfigSchema"
-	case eventHandleModuleRequirements:
-		return "eventHandleModuleRequirements"
-	case eventHandleModuleReady:
-		return "eventHandleModuleReady"
-	case eventHandleDisconnect:
-		return "eventHandleDisconnect"
-	case eventRemoteConfigReceive:
-		return "eventRemoteConfigReceive"
-	case eventRemoteConfigErrorReceive:
-		return "eventRemoteConfigErrorReceive"
-	default:
-		return "(ERROR: Can't find type of event)"
-	}
-}
-
 func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 	defaultMaxAckRetryTimeout = 10 * time.Second
 
 	tb.t = t
-	tb.checkingChan = make(checkingChan, 20)
-	tb.moduleReadyChan = make(checkingChan)
+	tb.checkingChan = make(chan checkingEvent, 20)
+	tb.moduleReadyChan = make(chan checkingEvent)
 	tb.expectedOrder = []eventType{
 		eventHandleConnect,
 		eventHandledConfigSchema,
@@ -137,7 +136,7 @@ func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 	return tb
 }
 
-func (m *moduleFuncs) setDefault(checkingChan checkingChan) {
+func (m *moduleFuncs) setDefault(checkingChan chan<- checkingEvent) {
 	m.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
 		event := checkingEvent{typeEvent: eventRemoteConfigReceive}
 		if *remoteConfig != _validRemoteConfig {
@@ -156,7 +155,7 @@ func (m *moduleFuncs) setDefault(checkingChan checkingChan) {
 	}
 }
 
-func (h *handleServerFuncs) setDefault(checkingChan, moduleReadyChan checkingChan) {
+func (h *handleServerFuncs) setDefault(checkingChan, moduleReadyChan chan<- checkingEvent) {
 	h.handleConnect = func(conn etp.Conn) {
 		checkingChan <- checkingEvent{typeEvent: eventHandleConnect, conn: conn}
 	}
@@ -336,6 +335,7 @@ func makeDeclaration(localConfig interface{}) ModuleInfo {
 		Endpoints:        []structure.EndpointDescriptor{},
 	}
 }
+
 func socketConfiguration(cfg interface{}) structure.SocketConfiguration {
 	appConfig := cfg.(*Configuration)
 	return structure.SocketConfiguration{

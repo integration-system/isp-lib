@@ -78,7 +78,7 @@ func (b *runner) run() (ret error) {
 	defer func() {
 		err := recover()
 		if err != nil {
-			ret = errors2.WithStack(fmt.Errorf("could not run module, fatal error occurred: %v", err))
+			ret = errors2.WithStack(fmt.Errorf("from panic: %v", err))
 		}
 	}()
 
@@ -188,7 +188,7 @@ func (b *runner) run() (ret error) {
 			case <-time.After(defaultConfigServiceConnectionTimeout):
 			}
 			client := b.initSocketConnection()
-			// true only only if context done (shutdown module)
+			// true only if context done (shutdown module)
 			if client == nil {
 				return nil
 			}
