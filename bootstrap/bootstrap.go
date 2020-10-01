@@ -169,7 +169,7 @@ func (cfg *bootstrapConfiguration) Run() {
 	defer goodbye.Exit(runner.ctx, 0)
 	err := runner.run()
 	if err != nil {
-		log.Logf(logrus.FatalLevel, stdcodes.ModuleRunFatalError, "could not run module, fatal error occurred: %v", err)
+		log.Logf(logrus.FatalLevel, stdcodes.ModuleRunFatalError, "%+v", err)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +22,7 @@ import (
 	log "github.com/integration-system/isp-log"
 	"github.com/integration-system/isp-log/stdcodes"
 	"github.com/mohae/deepcopy"
+	errors2 "github.com/pkg/errors"
 	"github.com/thecodeteam/goodbye"
 	"nhooyr.io/websocket"
 )
@@ -78,8 +78,7 @@ func (b *runner) run() (ret error) {
 	defer func() {
 		err := recover()
 		if err != nil {
-			debug.PrintStack()
-			ret = fmt.Errorf("[%04d] could not run module, fatal error occurred: %v", stdcodes.ModuleRunFatalError, err)
+			ret = errors2.WithStack(fmt.Errorf("could not run module, fatal error occurred: %v", err))
 		}
 	}()
 
