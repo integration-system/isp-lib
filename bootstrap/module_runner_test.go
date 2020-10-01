@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	json2 "encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,6 @@ var _validRemoteConfig = RemoteConfig{Something: "Something text"}
 
 func (cfg *bootstrapConfiguration) testRun(tb *testingBox) {
 	tb.moduleRunner = makeRunner(*cfg)
-	tb.moduleRunner.ctx = tb.moduleRunner.initShutdownHandler()
 	err := tb.moduleRunner.run()
 	tb.testingFuncs.errorHandlingTestRun(err, tb.t)
 }
@@ -132,17 +130,8 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		defer func() {
 			tb.checkingChan <- event
 		}()
-
-		type confSchema struct {
-			Config json2.RawMessage
-		}
-		var configSchema confSchema
-		if err := json.Unmarshal(data, &configSchema); err != nil {
-			event.err = err
-			return []byte(err.Error())
-		}
-		configSchema.Config[2]++
-		if err := conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected, configSchema.Config); err != nil {
+		if err := conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected,
+			[]byte("{\"tomething\":\"Something text\"}")); err != nil {
 			event.err = err
 			return []byte(err.Error())
 		}

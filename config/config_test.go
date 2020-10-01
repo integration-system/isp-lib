@@ -44,7 +44,7 @@ func TestRemoteConfigOverride(t *testing.T) {
 
 	ptr, err := InitRemoteConfig(&original, bytes)
 	if err != nil {
-		t.Errorf("%v", err)
+		t.Error(err)
 	}
 	original = *ptr.(*Config)
 
@@ -59,7 +59,7 @@ func TestInitRemoteConfig(t *testing.T) {
 	assert.NoError(err)
 	ptr, err := InitRemoteConfig(oldConfig, remoteConfig)
 	if err != nil {
-		t.Errorf("%v", err)
+		t.Error(err)
 	}
 	assert.Equal(expectedConfig, ptr)
 
@@ -68,7 +68,7 @@ func TestInitRemoteConfig(t *testing.T) {
 	assert.NoError(err)
 	ptr, err = InitRemoteConfig(secOldConf, secRemoteConf)
 	if err != nil {
-		t.Errorf("%v", err)
+		t.Error(err)
 	}
 	assert.Equal(secExpConf, ptr)
 }

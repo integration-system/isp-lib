@@ -112,13 +112,14 @@ func InitRemoteConfig(configuration interface{}, remoteConfig []byte) (interface
 	newConfiguration := reflect.New(reflect.TypeOf(configuration).Elem()).Interface()
 	if err := json.Unmarshal(newRemoteConfig, newConfiguration); err != nil {
 		return nil,
-			fmt.Errorf("received invalid remote config: %v\nconfig=%s", err, string(remoteConfig))
-	} else if err := validateConfig(newConfiguration); err != nil {
-		return nil,
-			fmt.Errorf("received invalid remote config: %v\nconfig=%s", err, string(remoteConfig))
-	} else {
-		remoteConfigInstance = newConfiguration
+			fmt.Errorf("received invalid remote config: %v", err)
 	}
+	if err := validateConfig(newConfiguration); err != nil {
+		return nil,
+			fmt.Errorf("received invalid remote config: %v", err)
+	}
+
+	remoteConfigInstance = newConfiguration
 
 	return remoteConfigInstance, nil
 }

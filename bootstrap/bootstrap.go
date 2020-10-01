@@ -165,8 +165,9 @@ func (cfg *bootstrapConfiguration) OnModuleReady(f func()) *bootstrapConfigurati
 // starts module, block until interruption
 func (cfg *bootstrapConfiguration) Run() {
 	runner := makeRunner(*cfg)
-	runner.ctx = runner.initShutdownHandler()
-	defer goodbye.Exit(runner.ctx, 0)
+	defer func() {
+		goodbye.Exit(runner.ctx, 0)
+	}()
 	err := runner.run()
 	if err != nil {
 		//level `logrus.FatalLevel` will not lead to os.Exit()
