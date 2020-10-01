@@ -74,8 +74,6 @@ func (b *runner) run() (ret error) {
 		}
 		return true
 	}, false)
-	ctx := b.initShutdownHandler()
-	b.ctx = ctx
 
 	defer func() {
 		err := recover()

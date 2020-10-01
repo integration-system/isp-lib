@@ -23,9 +23,9 @@ const (
 var _validRemoteConfig = RemoteConfig{Something: "Something text"}
 
 func (cfg *bootstrapConfiguration) testRun(tb *testingBox) {
-	runner := makeRunner(*cfg)
-	tb.moduleRunner = runner
-	err := runner.run()
+	tb.moduleRunner = makeRunner(*cfg)
+	tb.moduleRunner.ctx = tb.moduleRunner.initShutdownHandler()
+	err := tb.moduleRunner.run()
 	tb.testingFuncs.errorHandlingTestRun(err, tb.t)
 }
 

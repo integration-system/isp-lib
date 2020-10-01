@@ -165,11 +165,12 @@ func (cfg *bootstrapConfiguration) OnModuleReady(f func()) *bootstrapConfigurati
 // starts module, block until interruption
 func (cfg *bootstrapConfiguration) Run() {
 	runner := makeRunner(*cfg)
+	runner.ctx = runner.initShutdownHandler()
+	defer goodbye.Exit(runner.ctx, 0)
 	err := runner.run()
 	if err != nil {
-		log.Fatalf(stdcodes.ModuleRunFatalError, "could not run module, fatal error occurred: %v", err)
+		log.Logf(logrus.FatalLevel, stdcodes.ModuleRunFatalError, "could not run module, fatal error occurred: %v", err)
 	}
-	goodbye.Exit(runner.ctx, 0)
 }
 
 // entry point to describe module
