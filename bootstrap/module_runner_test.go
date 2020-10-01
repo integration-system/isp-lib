@@ -148,6 +148,9 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 		}
 		return []byte(utils.WsOkResponse)
 	}
+	tb.moduleFuncs.onRemoteConfigReceive = func(remoteConfig, _ *RemoteConfig) {
+		tb.t.Error("received from mock config-service RemoteConfig did not cause of terminate the module")
+	}
 	tb.testingFuncs.errorHandlingTestRun = func(err error, t *testing.T) {
 		if err == nil {
 			t.Errorf("Expected errror from run method, but received none")
