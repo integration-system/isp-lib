@@ -104,6 +104,7 @@ func (b *runner) run() (ret error) {
 	remoteConfigTimeoutChan := time.After(defaultRemoteConfigAwaitTimeout) //used for log WARN message
 	neverTriggerChan := make(chan time.Time)                               //used for stops log flood
 	initChan := make(chan struct{}, 1)
+	requiredModulesReadyChan := make(chan struct{})
 	heartbeatCh := time.NewTicker(heartbeatInterval)
 
 	//in main goroutine handle all asynchronous events from config service
@@ -129,10 +130,12 @@ func (b *runner) run() (ret error) {
 
 			remoteConfigReady = true
 			if !b.ready {
-				go b.sendModuleRequirements() //after first time receiving config, send requirements
+				go b.sendModuleRequirements(requiredModulesReadyChan) //after first time receiving config, send requirements
 			}
 
 			remoteConfigTimeoutChan = neverTriggerChan //stop flooding in logs
+		case <-requiredModulesReadyChan:
+			requiredModulesReady = true
 		case <-remoteConfigTimeoutChan:
 			log.Error(stdcodes.RemoteConfigIsNotReceivedByTimeout, "remote config is not received by timeout")
 			remoteConfigTimeoutChan = time.After(defaultRemoteConfigAwaitTimeout)
@@ -346,7 +349,7 @@ func (b *runner) initStatusMetrics() {
 	}
 }
 
-func (b *runner) sendModuleRequirements() {
+func (b *runner) sendModuleRequirements(requiredModulesReadyChan chan<- struct{}) {
 	requiredModules := make([]string, 0, len(b.requiredModules))
 	for evt := range b.requiredModules {
 		requiredModules = append(requiredModules, evt)
@@ -364,6 +367,7 @@ func (b *runner) sendModuleRequirements() {
 				Info(stdcodes.ConfigServiceSendRequirements, "send module requirements")
 		}
 	}
+	requiredModulesReadyChan <- struct{}{}
 }
 
 func (b *runner) sendModuleDeclaration(eventType string) {
@@ -409,7 +413,8 @@ func (b *runner) initialState() (remoteConfigReady, requiredModulesReady, routes
 			currentConnectedModules[evt] = true
 		}
 	}
-	requiredModulesReady = len(b.requiredModules) == len(currentConnectedModules)
+	//requiredModulesReady = len(b.requiredModules) == len(currentConnectedModules)
+	requiredModulesReady = false
 	routesReady = b.onRoutesReceive == nil
 	return
 }
