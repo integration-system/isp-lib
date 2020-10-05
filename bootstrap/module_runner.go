@@ -46,6 +46,7 @@ type runner struct {
 	routesChan       chan structure.RoutingConfig
 	connectEventChan chan connectEvent
 	disconnectChan   chan struct{}
+	ackEventChan     chan ackEventMsg
 
 	client                   etp.Client
 	connStrings              *RoundRobinStrings
@@ -62,6 +63,7 @@ func makeRunner(cfg bootstrapConfiguration) *runner {
 		connectEventChan:       make(chan connectEvent),
 		routesChan:             make(chan structure.RoutingConfig),
 		disconnectChan:         make(chan struct{}),
+		ackEventChan:           make(chan ackEventMsg, 1),
 	}
 }
 
@@ -183,6 +185,17 @@ func (b *runner) run() (ret error) {
 				log.Warnf(stdcodes.ConfigServiceDisconnection, "failed to heartbeat config service: %v", err)
 			}
 			cancel()
+		case msg := <-b.ackEventChan:
+			md := log.WithMetadata(log.Metadata{"event": msg.event, "data": msg.data})
+			if msg.err == nil {
+				md.Info(msg.info())
+			} else {
+				md.Errorf(stdcodes.ConfigServiceSendDataError, "%v", msg.err)
+				select {
+				case b.disconnectChan <- struct{}{}:
+				default:
+				}
+			}
 		case <-b.disconnectChan: //on disconnection, set state to 'not ready' once again
 			b.ready = false
 			remoteConfigReady, requiredModulesReady, routesReady, currentConnectedModules = b.initialState()
@@ -362,10 +375,7 @@ func (b *runner) sendModuleRequirements(requiredModulesReadyChan chan<- struct{}
 
 	if !requirements.IsEmpty() {
 		bf := getDefaultBackoff(b.ctx)
-		if ok, bytes, res := ackEvent(b.client, utils.ModuleSendRequirements, requirements, bf); ok {
-			log.WithMetadata(log.Metadata{"event": utils.ModuleSendRequirements, "data": string(bytes), "response": string(res)}).
-				Info(stdcodes.ConfigServiceSendRequirements, "send module requirements")
-		}
+		b.ackEventChan <- ackEvent(b.client, utils.ModuleSendRequirements, requirements, bf)
 	}
 	requiredModulesReadyChan <- struct{}{}
 }
@@ -376,10 +386,7 @@ func (b *runner) sendModuleDeclaration(eventType string) {
 	declaration := b.getModuleDeclaration()
 
 	bf := getDefaultBackoff(b.ctx)
-	if ok, bytes, res := ackEvent(b.client, eventType, declaration, bf); ok {
-		log.WithMetadata(log.Metadata{"event": eventType, "data": string(bytes), "response": string(res)}).
-			Info(stdcodes.ConfigServiceSendModuleReady, "send module declaration")
-	}
+	b.ackEventChan <- ackEvent(b.client, eventType, declaration, bf)
 }
 
 func (b *runner) sendModuleConfigSchema() {
@@ -394,10 +401,7 @@ func (b *runner) sendModuleConfigSchema() {
 	}
 
 	bf := getDefaultBackoff(b.ctx)
-	if ok, _, resp := ackEvent(b.client, utils.ModuleSendConfigSchema, req, bf); ok {
-		log.WithMetadata(log.Metadata{"response": string(resp)}).
-			Info(stdcodes.ConfigServiceSendConfigSchema, "send config schema and default config")
-	}
+	b.ackEventChan <- ackEvent(b.client, utils.ModuleSendConfigSchema, req, bf)
 }
 
 func (b *runner) sendModuleReady() {
