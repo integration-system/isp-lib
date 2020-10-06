@@ -53,7 +53,13 @@ LOOP:
 		select {
 		case event := <-tb.checkingChan:
 			if index > len(tb.expectedOrder)-1 {
-				tb.testingFuncs.checkLenDiffOrder(index, event, tb)
+				if event.conn != nil {
+					tb.t.Errorf("%s(%s connID) at place %d overflows the expected events limit %d",
+						event.typeEvent, event.conn.ID(), index+1, len(tb.expectedOrder))
+				} else {
+					tb.t.Errorf("%s is exceed the expected number of events %d",
+						event.typeEvent, len(tb.expectedOrder))
+				}
 			} else if event.typeEvent != tb.expectedOrder[index] {
 				tb.testingFuncs.checkBrokenOrder(&index, event, tb)
 			}

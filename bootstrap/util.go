@@ -116,15 +116,6 @@ func getConfigServiceConnectionStrings(sc structure.SocketConfiguration) ([]stri
 	return connStrings, nil
 }
 
-//func ackEvent2(client etp.Client, event string, data interface{}, bf backoff.BackOff) (bytes []byte, resp []byte, err error) {
-//	if bytes, resp, err = ackEventWithoutLogging(client, event, data, bf); err != nil {
-//		log.WithMetadata(log.Metadata{"event": event}).
-//			Errorf(stdcodes.ConfigServiceSendDataError, "%v", err)
-//		return
-//	}
-//	return
-//}
-
 func (m *ackEventMsg) info() (int, string) {
 	switch m.event {
 	case utils.ModuleSendConfigSchema:
@@ -164,7 +155,7 @@ func ackEvent(client etp.Client, event string, data interface{}, bf backoff.Back
 		err = connClosedErr
 	}
 	if err != nil {
-		msg.err = fmt.Errorf("ack event to config service: %v", err)
+		msg.err = fmt.Errorf("ack event to config service: %v\nwith response: %v", err, response)
 		return msg
 	}
 

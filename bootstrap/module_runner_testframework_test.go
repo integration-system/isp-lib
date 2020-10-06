@@ -113,7 +113,6 @@ type testingFuncs struct {
 	errorHandledConfigSchema func(event checkingEvent, str string) string
 	errorHandlingTestRun     func(err error, t *testing.T)
 	waitFullConnect          func(tb *testingBox)
-	checkLenDiffOrder        func(index int, event checkingEvent, tb *testingBox)
 	checkBrokenOrder         func(index *int, event checkingEvent, tb *testingBox)
 }
 
@@ -221,15 +220,6 @@ func (t *testingFuncs) setDefault() {
 		case <-timeout:
 			tb.t.Errorf("Waiting time %s for full connect module is over", timeoutValidConnect)
 		case <-tb.moduleReadyChan:
-		}
-	}
-	t.checkLenDiffOrder = func(index int, event checkingEvent, tb *testingBox) {
-		if event.conn != nil {
-			tb.t.Errorf("%s(%s connID) at place %d overflows the expected events limit %d",
-				event.typeEvent, event.conn.ID(), index+1, len(tb.expectedOrder))
-		} else {
-			tb.t.Errorf("%s is exceed the expected number of events %d",
-				event.typeEvent, len(tb.expectedOrder))
 		}
 	}
 	t.checkBrokenOrder = func(index *int, event checkingEvent, tb *testingBox) {
