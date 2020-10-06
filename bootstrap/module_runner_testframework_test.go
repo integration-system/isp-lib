@@ -113,6 +113,8 @@ type testingFuncs struct {
 	errorHandledConfigSchema func(event checkingEvent, str string) string
 	errorHandlingTestRun     func(err error, t *testing.T)
 	waitFullConnect          func(tb *testingBox)
+	checkLenDiffOrder        func(index int, event checkingEvent, tb *testingBox)
+	checkBrokenOrder         func(index *int, event checkingEvent, tb *testingBox)
 }
 
 func (tb *testingBox) setDefault(t *testing.T) *testingBox {
@@ -130,7 +132,7 @@ func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 	}
 
 	tb.moduleFuncs.setDefault(tb.checkingChan)
-	tb.handleServerFuncs.setDefault(tb.checkingChan, tb.moduleReadyChan)
+	tb.handleServerFuncs.setDefault(tb)
 	tb.testingFuncs.setDefault()
 
 	return tb
@@ -155,39 +157,36 @@ func (m *moduleFuncs) setDefault(checkingChan chan<- checkingEvent) {
 	}
 }
 
-func (h *handleServerFuncs) setDefault(checkingChan, moduleReadyChan chan<- checkingEvent) {
+func (h *handleServerFuncs) setDefault(tb *testingBox) {
 	h.handleConnect = func(conn etp.Conn) {
-		checkingChan <- checkingEvent{typeEvent: eventHandleConnect, conn: conn}
+		tb.checkingChan <- checkingEvent{typeEvent: eventHandleConnect, conn: conn}
 	}
 	h.handleDisconnect = func(conn etp.Conn, _ error) {
-		checkingChan <- checkingEvent{typeEvent: eventHandleDisconnect, conn: conn}
+		tb.checkingChan <- checkingEvent{typeEvent: eventHandleDisconnect, conn: conn}
 	}
 	h.handleModuleReady = func(conn etp.Conn, data []byte) []byte {
 		event := checkingEvent{typeEvent: eventHandleModuleReady, conn: conn}
-		checkingChan <- event
-		moduleReadyChan <- event
+		tb.checkingChan <- event
+		tb.moduleReadyChan <- event
 		return []byte(utils.WsOkResponse)
 	}
 	h.handleModuleRequirements = func(conn etp.Conn, data []byte) []byte {
-		checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
+		tb.checkingChan <- checkingEvent{typeEvent: eventHandleModuleRequirements, conn: conn}
 		return []byte(utils.WsOkResponse)
 	}
 	h.handleConfigSchema = func(conn etp.Conn, data []byte) []byte {
-		event := checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
-		defer func() {
-			checkingChan <- event
-		}()
+		tb.checkingChan <- checkingEvent{typeEvent: eventHandledConfigSchema, conn: conn}
 
 		type confSchema struct {
 			Config json2.RawMessage
 		}
 		var configSchema confSchema
 		if err := json.Unmarshal(data, &configSchema); err != nil {
-			event.err = err
+			tb.t.Errorf("error at unmarshal data in handleConfigSchema: %v", err)
 			return []byte(err.Error())
 		}
 		if err := conn.Emit(context.Background(), utils.ConfigSendConfigWhenConnected, configSchema.Config); err != nil {
-			event.err = err
+			tb.t.Errorf("error at Emit in handleConfigSchema: %v", err)
 			return []byte(err.Error())
 		}
 		return []byte(utils.WsOkResponse)
@@ -223,6 +222,18 @@ func (t *testingFuncs) setDefault() {
 			tb.t.Errorf("Waiting time %s for full connect module is over", timeoutValidConnect)
 		case <-tb.moduleReadyChan:
 		}
+	}
+	t.checkLenDiffOrder = func(index int, event checkingEvent, tb *testingBox) {
+		if event.conn != nil {
+			tb.t.Errorf("%s(%s connID) at place %d overflows the expected events limit %d",
+				event.typeEvent, event.conn.ID(), index+1, len(tb.expectedOrder))
+		} else {
+			tb.t.Errorf("%s is exceed the expected number of events %d",
+				event.typeEvent, len(tb.expectedOrder))
+		}
+	}
+	t.checkBrokenOrder = func(index *int, event checkingEvent, tb *testingBox) {
+		tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[*index], event.typeEvent)
 	}
 }
 

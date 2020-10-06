@@ -53,15 +53,9 @@ LOOP:
 		select {
 		case event := <-tb.checkingChan:
 			if index > len(tb.expectedOrder)-1 {
-				if event.conn != nil {
-					tb.t.Errorf("%s(%s connID) at place %d overflows the expected events limit %d",
-						event.typeEvent, event.conn.ID(), index+1, len(tb.expectedOrder))
-				} else {
-					tb.t.Errorf("%s is exceed the expected number of events %d",
-						event.typeEvent, len(tb.expectedOrder))
-				}
+				tb.testingFuncs.checkLenDiffOrder(index, event, tb)
 			} else if event.typeEvent != tb.expectedOrder[index] {
-				tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[index], event.typeEvent)
+				tb.testingFuncs.checkBrokenOrder(&index, event, tb)
 			}
 			if event.typeEvent == eventHandleConnect {
 				tb.conn = event.conn
@@ -189,7 +183,20 @@ func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 			return []byte(utils.WsOkResponse)
 		}
 	}
+	tb.testingFuncs.checkBrokenOrder = func(index *int, event checkingEvent, tb *testingBox) {
+		if event.typeEvent == eventHandleModuleRequirements && tb.expectedOrder[*index] == eventHandleModuleReady {
+			*index -= 1
+			return
+		}
+		tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[*index], event.typeEvent)
+	}
 
 	tb.testingServersRun()
 	tb.testingListener()
+}
+
+func Test_multiple(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		Test_NotOkResponse_handleModuleRequirements(t)
+	}
 }
