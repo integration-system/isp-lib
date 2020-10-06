@@ -52,7 +52,9 @@ func ListenRestartEvent() (string, func(data []byte)) {
 
 func handleRemoteConfiguration(remoteConfigChan chan []byte, event string) func([]byte) {
 	return func(data []byte) {
-		remoteConfigChan <- data
+		copyedSl := make([]byte, len(data))
+		copy(copyedSl, data)
+		remoteConfigChan <- copyedSl
 	}
 }
 
