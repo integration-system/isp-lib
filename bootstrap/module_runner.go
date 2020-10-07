@@ -121,8 +121,6 @@ func (b *runner) run() (ret error) {
 
 	go b.sendModuleConfigSchema() //create and send schema with default remote config
 
-	b.moduleState.moduleReady = false //module not ready state by default
-
 	b.moduleState = b.initialState()
 	remoteConfigTimeoutChan := time.After(defaultRemoteConfigAwaitTimeout) //used for log WARN message
 	neverTriggerChan := make(chan time.Time)                               //used for stops log flood
@@ -151,7 +149,7 @@ func (b *runner) run() (ret error) {
 			b.remoteConfigPtr = newRemoteConfig
 
 			b.moduleState.remoteConfigReady = true
-			if b.moduleState.moduleReady {
+			if !b.moduleState.moduleReady {
 				go b.sendModuleRequirements() //after first time receiving config, send requirements
 			}
 
@@ -220,7 +218,6 @@ func (b *runner) run() (ret error) {
 				}
 			}
 		case <-b.disconnectChan: //on disconnection, set state to 'not ready' once again
-			b.moduleState.moduleReady = false
 			b.moduleState = b.initialState()
 			select {
 			case <-b.ctx.Done():

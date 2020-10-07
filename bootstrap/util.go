@@ -146,7 +146,7 @@ func ackEvent(client etp.Client, event string, data interface{}, bf backoff.Back
 		} else if err != nil {
 			return err
 		} else if string(response) != utils.WsOkResponse {
-			return fmt.Errorf("with invalid response: %v", response)
+			return fmt.Errorf("with invalid response: %s", response)
 		}
 		return nil
 	}
