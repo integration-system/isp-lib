@@ -56,7 +56,6 @@ type runner struct {
 
 	client                   etp.Client
 	connStrings              *RoundRobinStrings
-	ready                    bool
 	lastFailedConnectionTime time.Time
 
 	ctx context.Context
@@ -67,11 +66,12 @@ type moduleState struct {
 	requiredModulesReady    bool
 	requiredSendReady       bool
 	routesReady             bool
+	moduleReady             bool
 	currentConnectedModules map[string]bool
 }
 
-func (t *moduleState) ready() bool {
-	if t.remoteConfigReady && t.requiredModulesReady && t.requiredSendReady && t.routesReady {
+func (t *moduleState) canSendModuleReady() bool {
+	if t.remoteConfigReady && t.requiredModulesReady && t.requiredSendReady && t.routesReady && !t.moduleReady {
 		return true
 	}
 	return false
@@ -121,7 +121,7 @@ func (b *runner) run() (ret error) {
 
 	go b.sendModuleConfigSchema() //create and send schema with default remote config
 
-	b.ready = false //module not ready state by default
+	b.moduleState.moduleReady = false //module not ready state by default
 
 	b.moduleState = b.initialState()
 	remoteConfigTimeoutChan := time.After(defaultRemoteConfigAwaitTimeout) //used for log WARN message
@@ -132,8 +132,8 @@ func (b *runner) run() (ret error) {
 	//in main goroutine handle all asynchronous events from config service
 	for {
 		//if all conditions are true, put signal into channel and later in loop send MODULE:READY event to config-service
-		if !b.ready && b.moduleState.ready() {
-			b.ready = true
+		if b.moduleState.canSendModuleReady() {
+			b.moduleState.moduleReady = true
 			initChan <- struct{}{}
 		}
 
@@ -151,7 +151,7 @@ func (b *runner) run() (ret error) {
 			b.remoteConfigPtr = newRemoteConfig
 
 			b.moduleState.remoteConfigReady = true
-			if !b.ready {
+			if b.moduleState.moduleReady {
 				go b.sendModuleRequirements() //after first time receiving config, send requirements
 			}
 
@@ -220,7 +220,7 @@ func (b *runner) run() (ret error) {
 				}
 			}
 		case <-b.disconnectChan: //on disconnection, set state to 'not ready' once again
-			b.ready = false
+			b.moduleState.moduleReady = false
 			b.moduleState = b.initialState()
 			select {
 			case <-b.ctx.Done():
@@ -368,7 +368,7 @@ func (b *runner) initStatusMetrics() {
 			"connected":                 status,
 			"lastFailedConnectionMsAgo": lastFailedConnectionMsAgo,
 			"address":                   uri,
-			"moduleReady":               b.ready,
+			"moduleReady":               b.moduleState.moduleReady,
 		}
 	})
 
