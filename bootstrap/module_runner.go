@@ -12,6 +12,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/integration-system/isp-lib/v2/docs"
+	"github.com/sirupsen/logrus"
 
 	etp "github.com/integration-system/isp-etp-go/v2/client"
 	"github.com/integration-system/isp-lib/v2/backend"
@@ -203,7 +204,10 @@ func (b *runner) run() (ret error) {
 			}
 			cancel()
 		case msg := <-b.ackEventChan:
-			md := log.WithMetadata(log.Metadata{"event": msg.event, "data": msg.data})
+			md := log.WithMetadata(log.Metadata{"event": msg.event})
+			if logrus.IsLevelEnabled(logrus.DebugLevel) && utils.DEV {
+				(*md)["data"] = msg.data
+			}
 			if msg.err == nil {
 				md.Info(msg.info())
 				if msg.event == utils.ModuleSendRequirements {
