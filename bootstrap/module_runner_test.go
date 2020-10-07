@@ -61,7 +61,7 @@ LOOP:
 						event.typeEvent, len(tb.expectedOrder))
 				}
 			} else if event.typeEvent != tb.expectedOrder[index] {
-				tb.testingFuncs.checkBrokenOrder(&index, event, tb)
+				tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[index], event.typeEvent)
 			}
 			if event.typeEvent == eventHandleConnect {
 				tb.conn = event.conn
@@ -162,23 +162,22 @@ func Test_moduleReceivedAnotherConfig(t *testing.T) {
 	tb.testingListener()
 }
 
-// WORK IN PROGRESS
-// Проверяется положение: Если в процессе “рукопожатия” или после от isp-config-service в ответ возвращает не “ok”
+// Проверяется положение: Если в процессе "рукопожатия" или после от isp-config-service в ответ возвращает не "ok"
 // или сервис становится недоступным, то модуль начинает процесс инициализации с самого начала.
 // Группа тестов проверяет поведение при получении отличающегося от utils.WsOkResponse ответа из хендлеров
-// handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызыванные горутинами:
+// handleConfigSchema handleModuleRequirements, handleModuleReady обрабатывающих события вызванные горутинами:
 // go b.sendModuleConfigSchema(), go b.sendModuleRequirements(), go b.sendModuleReady().
-// Если данные тесты возвращают ошибки, скорее всего не обрабатывается отлчитый от utils.WsOkResponse ответ,
+// Если данные тесты возвращают ошибки, скорее всего не обрабатывается отличный от utils.WsOkResponse ответ,
 // возвращенный соответствующей функцией ackEvent
-// Попытки повторного подключения инициализируются функцией backoff.Retry(..), стандартно время следующего ретрая в
-// растет экспоненциально, но точно определяется на основании псевдослучайного defaultAckRetryRandomizationFactor
+// Попытки повторного подключения инициализируются функцией backoff.Retry(..), стандартное время следующего повтора
+// растет экспоненциально, но точно определяется на основании псевдослучайного ackRetryRandomizationFactor
 // который для данных тестов отключен
-// Функция backoff.Retry(..) отдает управление не по истечении defaultMaxAckRetryTimeout,
-// а при рассчете времени следующего ретрая, если это время будет больше defaultMaxAckRetryTimeout
+// Функция backoff.Retry(..) отдает управление не по истечении ackRetryMaxTimeout,
+// а при расчете времени следующего повтора, если это время будет больше ackRetryMaxTimeout
 func Test_NotOkResponse_handleConfigSchema(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
-	defaultMaxAckRetryTimeout = 1600 * time.Millisecond
-	defaultAckRetryRandomizationFactor = 0
+	ackRetryMaxTimeout = 1600 * time.Millisecond
+	ackRetryRandomizationFactor = 0
 
 	tb.expectedOrder = []eventType{
 		eventHandleConnect,
@@ -200,7 +199,7 @@ func Test_NotOkResponse_handleConfigSchema(t *testing.T) {
 		if startTime == zeroTime {
 			startTime = time.Now()
 		}
-		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
+		if startTime.After(time.Now().Add(-ackRetryMaxTimeout)) {
 			return []byte("NOT OK")
 		} else {
 			type confSchema struct {
@@ -225,8 +224,8 @@ func Test_NotOkResponse_handleConfigSchema(t *testing.T) {
 
 func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
-	defaultMaxAckRetryTimeout = 1600 * time.Millisecond
-	defaultAckRetryRandomizationFactor = 0
+	ackRetryMaxTimeout = 1600 * time.Millisecond
+	ackRetryRandomizationFactor = 0
 
 	tb.expectedOrder = []eventType{
 		eventHandleConnect,
@@ -250,7 +249,7 @@ func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 		if startTime == zeroTime {
 			startTime = time.Now()
 		}
-		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
+		if startTime.After(time.Now().Add(-ackRetryMaxTimeout)) {
 			return []byte("NOT OK")
 		} else {
 			return []byte(utils.WsOkResponse)
@@ -263,8 +262,8 @@ func Test_NotOkResponse_handleModuleRequirements(t *testing.T) {
 
 func Test_NotOkResponse_handleModuleReady(t *testing.T) {
 	tb := (&testingBox{}).setDefault(t)
-	defaultMaxAckRetryTimeout = 1600 * time.Millisecond
-	defaultAckRetryRandomizationFactor = 0
+	ackRetryMaxTimeout = 1600 * time.Millisecond
+	ackRetryRandomizationFactor = 0
 
 	tb.expectedOrder = []eventType{
 		eventHandleConnect,
@@ -290,7 +289,7 @@ func Test_NotOkResponse_handleModuleReady(t *testing.T) {
 		if startTime == zeroTime {
 			startTime = time.Now()
 		}
-		if startTime.After(time.Now().Add(-defaultMaxAckRetryTimeout)) {
+		if startTime.After(time.Now().Add(-ackRetryMaxTimeout)) {
 			return []byte("NOT OK")
 		} else {
 			tb.moduleReadyChan <- event

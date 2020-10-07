@@ -38,15 +38,15 @@ const (
 )
 
 var (
-	defaultMaxAckRetryTimeout          = 10 * time.Second
-	defaultAckRetryRandomizationFactor = backoff.DefaultRandomizationFactor
+	ackRetryMaxTimeout          = 10 * time.Second
+	ackRetryRandomizationFactor = backoff.DefaultRandomizationFactor
 )
 
 type runner struct {
 	bootstrapConfiguration
 
-	moduleInfo ModuleInfo
-	triggers   triggers
+	moduleInfo  ModuleInfo
+	moduleState moduleState
 
 	remoteConfigChan chan []byte
 	routesChan       chan structure.RoutingConfig
@@ -62,14 +62,15 @@ type runner struct {
 	ctx context.Context
 }
 
-type triggers struct {
-	remoteConfigReady    bool
-	requiredModulesReady bool
-	requiredSendReady    bool
-	routesReady          bool
+type moduleState struct {
+	remoteConfigReady       bool
+	requiredModulesReady    bool
+	requiredSendReady       bool
+	routesReady             bool
+	currentConnectedModules map[string]bool
 }
 
-func (t *triggers) ready() bool {
+func (t *moduleState) ready() bool {
 	if t.remoteConfigReady && t.requiredModulesReady && t.requiredSendReady && t.routesReady {
 		return true
 	}
@@ -83,7 +84,7 @@ func makeRunner(cfg bootstrapConfiguration) *runner {
 		connectEventChan:       make(chan connectEvent),
 		routesChan:             make(chan structure.RoutingConfig),
 		disconnectChan:         make(chan struct{}),
-		ackEventChan:           make(chan ackEventMsg, 1),
+		ackEventChan:           make(chan ackEventMsg),
 	}
 }
 
@@ -122,8 +123,7 @@ func (b *runner) run() (ret error) {
 
 	b.ready = false //module not ready state by default
 
-	var currentConnectedModules map[string]bool
-	b.triggers, currentConnectedModules = b.initialState()
+	b.moduleState = b.initialState()
 	remoteConfigTimeoutChan := time.After(defaultRemoteConfigAwaitTimeout) //used for log WARN message
 	neverTriggerChan := make(chan time.Time)                               //used for stops log flood
 	initChan := make(chan struct{}, 1)
@@ -132,7 +132,7 @@ func (b *runner) run() (ret error) {
 	//in main goroutine handle all asynchronous events from config service
 	for {
 		//if all conditions are true, put signal into channel and later in loop send MODULE:READY event to config-service
-		if !b.ready && b.triggers.ready() {
+		if !b.ready && b.moduleState.ready() {
 			b.ready = true
 			initChan <- struct{}{}
 		}
@@ -150,7 +150,7 @@ func (b *runner) run() (ret error) {
 			}
 			b.remoteConfigPtr = newRemoteConfig
 
-			b.triggers.remoteConfigReady = true
+			b.moduleState.remoteConfigReady = true
 			if !b.ready {
 				go b.sendModuleRequirements() //after first time receiving config, send requirements
 			}
@@ -161,26 +161,26 @@ func (b *runner) run() (ret error) {
 			remoteConfigTimeoutChan = time.After(defaultRemoteConfigAwaitTimeout)
 		case routers := <-b.routesChan:
 			if b.onRoutesReceive != nil {
-				b.triggers.routesReady = b.onRoutesReceive(routers)
+				b.moduleState.routesReady = b.onRoutesReceive(routers)
 			}
 		case e := <-b.connectEventChan:
 			if c, ok := b.requiredModules[e.module]; ok {
 				if ok := c.consumer(e.addressList); ok {
-					currentConnectedModules[e.module] = true
+					b.moduleState.currentConnectedModules[e.module] = true
 				}
 
 				ok := true
 				for e, consumer := range b.requiredModules {
-					val := currentConnectedModules[e]
+					val := b.moduleState.currentConnectedModules[e]
 					if !val && consumer.mustConnect {
 						ok = false
 						break
 					}
 				}
-				b.triggers.requiredModulesReady = ok
+				b.moduleState.requiredModulesReady = ok
 
 				addrList := make([]string, 0, len(e.addressList))
-				if currentConnectedModules[e.module] {
+				if b.moduleState.currentConnectedModules[e.module] {
 					for _, addr := range e.addressList {
 						addrList = append(addrList, addr.GetAddress())
 					}
@@ -211,17 +211,17 @@ func (b *runner) run() (ret error) {
 			if msg.err == nil {
 				md.Info(msg.info())
 				if msg.event == utils.ModuleSendRequirements {
-					b.triggers.requiredSendReady = true
+					b.moduleState.requiredSendReady = true
 				}
 			} else {
-				md.Errorf(stdcodes.ConfigServiceSendDataError, "%v", msg.err)
+				md.Error(stdcodes.ConfigServiceSendDataError, msg.err)
 				if err := b.client.Close(); err != nil {
 					log.Errorf(stdcodes.ConfigServiceConnectionError, "closing etp.client happened with error: %v", err)
 				}
 			}
 		case <-b.disconnectChan: //on disconnection, set state to 'not ready' once again
 			b.ready = false
-			b.triggers, currentConnectedModules = b.initialState()
+			b.moduleState = b.initialState()
 			select {
 			case <-b.ctx.Done():
 				return nil
@@ -431,16 +431,16 @@ func (b *runner) sendModuleReady() {
 }
 
 // returns module initial state from bootstrap configuration
-func (b *runner) initialState() (triggers triggers, currentConnectedModules map[string]bool) {
-	triggers.remoteConfigReady = false
-	currentConnectedModules = make(map[string]bool)
+func (b *runner) initialState() (moduleState moduleState) {
+	moduleState.remoteConfigReady = false
+	moduleState.currentConnectedModules = make(map[string]bool)
 	for evt, c := range b.requiredModules {
 		if !c.mustConnect {
-			currentConnectedModules[evt] = true
+			moduleState.currentConnectedModules[evt] = true
 		}
 	}
-	triggers.requiredModulesReady = len(b.requiredModules) == len(currentConnectedModules)
-	triggers.routesReady = b.onRoutesReceive == nil
+	moduleState.requiredModulesReady = len(b.requiredModules) == len(moduleState.currentConnectedModules)
+	moduleState.routesReady = b.onRoutesReceive == nil
 	return
 }
 

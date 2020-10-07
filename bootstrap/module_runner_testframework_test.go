@@ -114,12 +114,11 @@ type testingFuncs struct {
 	errorHandledConfigSchema func(event checkingEvent, str string) string
 	errorHandlingTestRun     func(err error, t *testing.T)
 	waitFullConnect          func(tb *testingBox)
-	checkBrokenOrder         func(index *int, event checkingEvent, tb *testingBox)
 }
 
 func (tb *testingBox) setDefault(t *testing.T) *testingBox {
-	defaultMaxAckRetryTimeout = 10 * time.Second
-	defaultAckRetryRandomizationFactor = backoff.DefaultRandomizationFactor
+	ackRetryMaxTimeout = 10 * time.Second
+	ackRetryRandomizationFactor = backoff.DefaultRandomizationFactor
 
 	tb.t = t
 	tb.checkingChan = make(chan checkingEvent, 20)
@@ -223,9 +222,6 @@ func (t *testingFuncs) setDefault() {
 			tb.t.Errorf("Waiting time %s for full connect module is over", timeoutValidConnect)
 		case <-tb.moduleReadyChan:
 		}
-	}
-	t.checkBrokenOrder = func(index *int, event checkingEvent, tb *testingBox) {
-		tb.t.Errorf("order is broken, expected:\n%s\n got:\n%s", tb.expectedOrder[*index], event.typeEvent)
 	}
 }
 
