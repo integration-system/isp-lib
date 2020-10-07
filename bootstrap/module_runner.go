@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/integration-system/isp-lib/v2/docs"
 
 	etp "github.com/integration-system/isp-etp-go/v2/client"
@@ -35,7 +36,10 @@ const (
 	defaultConnectionReadLimit            int64 = 4 << 20 // 4 MB
 )
 
-var defaultMaxAckRetryTimeout = 10 * time.Second
+var (
+	defaultMaxAckRetryTimeout          = 10 * time.Second
+	defaultAckRetryRandomizationFactor = backoff.DefaultRandomizationFactor
+)
 
 type runner struct {
 	bootstrapConfiguration

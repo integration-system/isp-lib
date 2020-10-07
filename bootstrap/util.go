@@ -155,7 +155,7 @@ func ackEvent(client etp.Client, event string, data interface{}, bf backoff.Back
 		err = connClosedErr
 	}
 	if err != nil {
-		msg.err = fmt.Errorf("ack event to config service: %v\nwith response: %v", err, response)
+		msg.err = fmt.Errorf("ack event to config service: %v , with response: %v", err, response)
 		return msg
 	}
 
@@ -165,6 +165,7 @@ func ackEvent(client etp.Client, event string, data interface{}, bf backoff.Back
 func getDefaultBackoff(ctx context.Context) backoff.BackOff {
 	backOff := backoff.NewExponentialBackOff()
 	backOff.MaxElapsedTime = defaultMaxAckRetryTimeout
+	backOff.RandomizationFactor = defaultAckRetryRandomizationFactor
 	bf := backoff.WithContext(backOff, ctx)
 	return bf
 }

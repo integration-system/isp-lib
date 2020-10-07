@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	etp "github.com/integration-system/isp-etp-go/v2"
 	"github.com/integration-system/isp-lib/v2/config"
 	"github.com/integration-system/isp-lib/v2/structure"
@@ -118,6 +119,7 @@ type testingFuncs struct {
 
 func (tb *testingBox) setDefault(t *testing.T) *testingBox {
 	defaultMaxAckRetryTimeout = 10 * time.Second
+	defaultAckRetryRandomizationFactor = backoff.DefaultRandomizationFactor
 
 	tb.t = t
 	tb.checkingChan = make(chan checkingEvent, 20)
