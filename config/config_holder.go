@@ -214,6 +214,9 @@ func handleConfigChange(newConfig, oldConfig interface{}) {
 func validateConfig(cfg interface{}) error {
 	if _, err := govalidator.ValidateStruct(cfg); err != nil {
 		validationErrors := govalidator.ErrorsByField(err)
+		if len(validationErrors) == 0 {
+			return err
+		}
 		str := strings.Builder{}
 		for k, v := range validationErrors {
 			str.WriteString(k)

@@ -1,3 +1,5 @@
+### v2.8.5
+* bootstrap: fix error wrapping from govalidator when schema of remote config has required map field
 ### v2.8.4
 * moved event entities to event-lib
 * fix jsonschema cross package definition collision
